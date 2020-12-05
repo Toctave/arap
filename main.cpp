@@ -40,7 +40,8 @@ int main(int argc, char *argv[])
     // Plot the mesh
     igl::opengl::glfw::Viewer viewer;
     
-    Eigen::MatrixXd C = Eigen::MatrixXd::Constant(F.rows(),3,1);
+    Eigen::MatrixXd C(1, 3);
+    C << 1, 0, 1;
 
     viewer.callback_mouse_move = 
 	[&V,&F,&C](igl::opengl::glfw::Viewer& viewer, int, int)->bool
@@ -73,7 +74,11 @@ int main(int argc, char *argv[])
 		    viewer.data().set_points(point, C);
 
 		    return true;
+		} else {
+		    viewer.data().clear_points();
 		}
+
+		
 		return false;
 	    };
 
