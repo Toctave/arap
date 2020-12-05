@@ -14,7 +14,7 @@ bool mouse_move(Viewer& viewer, int x, int y) {
 int main(int argc, char *argv[])
 {
     // Inline mesh of a cube
-    const Eigen::MatrixXd V= (Eigen::MatrixXd(8,3)<<
+    Eigen::MatrixXd V= (Eigen::MatrixXd(8,3)<<
 			      0.0,0.0,0.0,
 			      0.0,0.0,1.0,
 			      0.0,1.0,0.0,
@@ -43,22 +43,53 @@ int main(int argc, char *argv[])
     Eigen::MatrixXd C(1, 3);
     C << 1, 0, 1;
 
+    int closest = -1;
+    bool mouse_is_down = false;
+    float last_mouse_x(0), last_mouse_y(0);
+    
+
     viewer.callback_mouse_move = 
-	[&V,&F,&C](igl::opengl::glfw::Viewer& viewer, int, int)->bool
+	[&V,&F,&C, &closest, &mouse_is_down, &last_mouse_x, &last_mouse_y](igl::opengl::glfw::Viewer& viewer, int, int)->bool
 	    {
 		int fid;
 		Eigen::Vector3f bc;
 		// Cast a ray in the view direction starting from the mouse position
 		double x = viewer.current_mouse_x;
 		double y = viewer.core().viewport(3) - viewer.current_mouse_y;
+
+		if (mouse_is_down && closest >= 0) {
+		    // deplacer closest
+		    float mouse_dx = x - last_mouse_x;
+		    float mouse_dy = y - last_mouse_y;
+		    Eigen::MatrixXf m = viewer.core().view.inverse();
+		    // std::cout << m.cols() << " " << m.rows() << std::endl;
+		    printf("dx %f dy %f\n", mouse_dx, mouse_dy);
+		    Eigen::Vector4f dmouse(mouse_dx, mouse_dy, 0, 0);
+		    Eigen::Vector4f dmouse_world = m * dmouse;
+
+		    float speed = .01;
+		    V(closest, 0) += dmouse_world(0) * speed;
+		    V(closest, 1) += dmouse_world(1) * speed;
+		    V(closest, 2) += dmouse_world(2) * speed;
+
+		    viewer.data().set_mesh(V, F);
+
+		    last_mouse_x = x;
+		    last_mouse_y = y;
+		    
+		    return true;
+		}
+		last_mouse_x = x;
+		last_mouse_y = y;
+		
 		if(igl::unproject_onto_mesh(Eigen::Vector2f(x,y),
-					    viewer.core().view,
-					    viewer.core().proj,
-					    viewer.core().viewport,
-					    V,
-					    F,
-					    fid,
-					    bc))
+							      viewer.core().view,
+							      viewer.core().proj,
+							      viewer.core().viewport,
+							      V,
+							      F,
+							      fid,
+							      bc))
 		{
 		    Eigen::MatrixXd face_points(3, 3);
 
@@ -70,17 +101,46 @@ int main(int argc, char *argv[])
 			bc(0) * face_points.row(0) +
 			bc(1) * face_points.row(1) +
 			bc(2) * face_points.row(2);
-		    
-		    viewer.data().set_points(point, C);
 
+		    if (bc(0) > bc(1)) {
+			if (bc(0) > bc(2)) {
+			    closest = F(fid, 0);
+			} else {
+			    closest = F(fid, 2);
+			}
+		    } else {
+			if (bc(1) > bc(2)) {
+			    closest = F(fid, 1);
+			} else {
+			    closest = F(fid, 2);
+			}
+		    }
+		    
+		    viewer.data().set_points(V.row(closest), C);
 		    return true;
 		} else {
 		    viewer.data().clear_points();
+		    closest = -1;
 		}
-
 		
 		return false;
 	    };
+
+    viewer.callback_mouse_down = 
+	[&closest, &mouse_is_down](igl::opengl::glfw::Viewer& viewer, int, int)->bool
+	    {
+		printf("closest = %d\n", closest);
+		mouse_is_down = true;
+		return false;
+	    };
+
+    viewer.callback_mouse_up = 
+	[&closest, &mouse_is_down](igl::opengl::glfw::Viewer& viewer, int, int)->bool
+	    {
+		mouse_is_down = false;
+		return false;
+	    };
+    
 
     
     viewer.data().set_mesh(V, F);
