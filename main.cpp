@@ -10,7 +10,7 @@ using igl::opengl::glfw::Viewer;
 int main(int argc, char *argv[])
 {
     // Inline mesh of a cube
-    Eigen::MatrixXd V= (Eigen::MatrixXd(8,3)<<
+    const Eigen::MatrixXd V0 = (Eigen::MatrixXd(8,3)<<
 			      0.0,0.0,0.0,
 			      0.0,0.0,1.0,
 			      0.0,1.0,0.0,
@@ -19,7 +19,7 @@ int main(int argc, char *argv[])
 			      1.0,0.0,1.0,
 			      1.0,1.0,0.0,
 			      1.0,1.0,1.0).finished();
-    const Eigen::MatrixXi F = (Eigen::MatrixXi(12,3)<<
+    const Eigen::MatrixXi F0 = (Eigen::MatrixXi(12,3)<<
 			       1,7,5,
 			       1,3,7,
 			       1,4,3,
@@ -33,8 +33,8 @@ int main(int argc, char *argv[])
 			       2,6,8,
 			       2,8,4).finished().array()-1;
 
-    Mesh m(V, F);
-    std::cout << laplacian_matrix(m);
+    Mesh mesh(V0, F0);
+    auto weights = cotangent_weights(mesh);
 
     // Plot the mesh
     Viewer viewer;
@@ -47,7 +47,7 @@ int main(int argc, char *argv[])
     float last_mouse_x(0), last_mouse_y(0);
 
     viewer.callback_mouse_move = 
-	[&V,&F,&C, &closest, &mouse_is_down, &last_mouse_x, &last_mouse_y](igl::opengl::glfw::Viewer& viewer, int, int)->bool
+	[&mesh, &weights, &V0, &C, &closest, &mouse_is_down, &last_mouse_x, &last_mouse_y](igl::opengl::glfw::Viewer& viewer, int, int)->bool
 	    {
 		int fid;
 		Eigen::Vector3f bc;
@@ -64,11 +64,11 @@ int main(int argc, char *argv[])
 		    Eigen::Vector4f dmouse_world = m * dmouse;
 
 		    float speed = .01;
-		    V(closest, 0) += dmouse_world(0) * speed;
-		    V(closest, 1) += dmouse_world(1) * speed;
-		    V(closest, 2) += dmouse_world(2) * speed;
+		    mesh.V(closest, 0) += dmouse_world(0) * speed;
+		    mesh.V(closest, 1) += dmouse_world(1) * speed;
+		    mesh.V(closest, 2) += dmouse_world(2) * speed;
 
-		    viewer.data().set_mesh(V, F);
+		    viewer.data().set_mesh(mesh.V, mesh.F);
 
 		    last_mouse_x = x;
 		    last_mouse_y = y;
@@ -79,19 +79,19 @@ int main(int argc, char *argv[])
 		last_mouse_y = y;
 		
 		if(igl::unproject_onto_mesh(Eigen::Vector2f(x,y),
-							      viewer.core().view,
-							      viewer.core().proj,
-							      viewer.core().viewport,
-							      V,
-							      F,
-							      fid,
-							      bc))
+					    viewer.core().view,
+					    viewer.core().proj,
+					    viewer.core().viewport,
+					    mesh.V,
+					    mesh.F,
+					    fid,
+					    bc))
 		{
 		    Eigen::MatrixXd face_points(3, 3);
 
-		    face_points.row(0) = V.row(F(fid, 0));
-		    face_points.row(1) = V.row(F(fid, 1));
-		    face_points.row(2) = V.row(F(fid, 2));
+		    face_points.row(0) = mesh.V.row(mesh.F(fid, 0));
+		    face_points.row(1) = mesh.V.row(mesh.F(fid, 1));
+		    face_points.row(2) = mesh.V.row(mesh.F(fid, 2));
 
 		    Eigen::MatrixXd point =
 			bc(0) * face_points.row(0) +
@@ -100,19 +100,19 @@ int main(int argc, char *argv[])
 
 		    if (bc(0) > bc(1)) {
 			if (bc(0) > bc(2)) {
-			    closest = F(fid, 0);
+			    closest = mesh.F(fid, 0);
 			} else {
-			    closest = F(fid, 2);
+			    closest = mesh.F(fid, 2);
 			}
 		    } else {
 			if (bc(1) > bc(2)) {
-			    closest = F(fid, 1);
+			    closest = mesh.F(fid, 1);
 			} else {
-			    closest = F(fid, 2);
+			    closest = mesh.F(fid, 2);
 			}
 		    }
 		    
-		    viewer.data().set_points(V.row(closest), C);
+		    viewer.data().set_points(mesh.V.row(closest), C);
 		    return true;
 		} else {
 		    viewer.data().clear_points();
@@ -131,15 +131,21 @@ int main(int argc, char *argv[])
 	    };
 
     viewer.callback_mouse_up = 
-	[&closest, &mouse_is_down](igl::opengl::glfw::Viewer& viewer, int, int)->bool
+	[&mesh, &weights, &V0, &closest, &mouse_is_down](igl::opengl::glfw::Viewer& viewer, int, int)->bool
 	    {
 		mouse_is_down = false;
+
+		if (closest > 0) {
+		    std::cout
+			<< compute_best_rotation(mesh, weights, V0, closest)
+			<< std::endl
+			<< std::endl;
+		}
+		
 		return false;
 	    };
     
-
-    
-    viewer.data().set_mesh(V, F);
+    viewer.data().set_mesh(mesh.V, mesh.F);
     viewer.data().set_face_based(true);
     viewer.launch();
 }

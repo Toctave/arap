@@ -64,10 +64,12 @@ Eigen::SparseMatrix<double> cotangent_weights(const Mesh& mesh) {
     return weights;
 }
 
-Eigen::SparseMatrix<double> laplacian_matrix(const Mesh& mesh) {
-    Eigen::SparseMatrix<double> mat = -cotangent_weights(mesh);
+Eigen::SparseMatrix<double> laplacian_matrix(
+    const Eigen::SparseMatrix<double>& weights) {
+    
+    Eigen::SparseMatrix<double> mat = -weights;
 
-    for (int k=0; k<mat.outerSize(); ++k) {
+    for (int k=0; k < mat.outerSize(); ++k) {
 	double colsum = 0;
 	for (Eigen::SparseMatrix<double>::InnerIterator it(mat,k); it; ++it) {
 	    colsum += it.value();
@@ -76,4 +78,65 @@ Eigen::SparseMatrix<double> laplacian_matrix(const Mesh& mesh) {
     }
 
     return mat;
+}
+
+Eigen::Matrix3d compute_best_rotation(
+    const Mesh& mesh, const Eigen::SparseMatrix<double>& weights,
+    const Eigen::MatrixXd& V0, int v) {
+    
+    Eigen::Matrix3d cov;
+
+    for (Eigen::SparseMatrix<double>::InnerIterator it(weights, v); it; ++it) {
+	Eigen::Vector3d e = mesh.V.row(it.col()) - mesh.V.row(it.row());
+	// @opti : e0 could be precomputed
+	Eigen::Vector3d e0 = V0.row(it.col()) - V0.row(it.row());
+	cov += it.value() * e0 * e.transpose();
+    }
+    
+    Eigen::JacobiSVD<Eigen::Matrix3d> svd(cov, Eigen::ComputeFullU | Eigen::ComputeFullV);
+
+    Eigen::Matrix3d um = svd.matrixU();
+    Eigen::Matrix3d vm = svd.matrixV();
+    Eigen::Matrix3d rot = vm * um.transpose();
+
+    if (rot.determinant() < 0) {
+	um.col(2) *= -1;
+	rot = vm * um.transpose();
+    }
+    
+    return rot;
+}
+
+Eigen::RowVector3d laplacian_rhs(
+    const Mesh& mesh, const Eigen::SparseMatrix<double>& weights,
+    std::vector<Eigen::Matrix3d> rotations, int v) {
+
+    Eigen::RowVector3d rval;
+    for (Eigen::SparseMatrix<double>::InnerIterator it(weights, v); it; ++it) {
+	rval += .5 * it.value() *
+	    (mesh.V.row(it.col()) - mesh.V.row(it.row())) *
+	    (rotations[it.row()] * rotations[it.col()]).transpose();
+    }
+
+    return rval;
+}
+
+void setup_laplacian_system(const Mesh& mesh, const Eigen::MatrixXd& V0) {
+    Eigen::SparseMatrix<double> weights = cotangent_weights(mesh);
+    Eigen::SparseMatrix<double> lapmat = laplacian_matrix(weights);
+
+    std::vector<Eigen::Matrix3d> rotations(mesh.V.rows());
+    Eigen::Matrix<double, Eigen::Dynamic, 3> rhs;
+    rhs.resize(mesh.V.rows(), 3);
+
+    for (int i = 0; i < mesh.V.rows(); i++) {
+	rotations[i] = compute_best_rotation(mesh, weights, V0, i);
+    }
+    
+    for (int i = 0; i < mesh.V.rows(); i++) {
+	rhs.row(i) = laplacian_rhs(mesh, weights, rotations, i);
+    }
+
+    // now V' is such that :
+    // lapmat * V' = rhs
 }
