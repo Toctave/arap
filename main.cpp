@@ -3,13 +3,9 @@
 #include <cstdio>
 #include <iostream>
 
+#include "arap.hpp"
+
 using igl::opengl::glfw::Viewer;
-
-bool mouse_move(Viewer& viewer, int x, int y) {
-    printf("%d %d\n", x, y);
-
-    return false;
-}
 
 int main(int argc, char *argv[])
 {
@@ -37,8 +33,11 @@ int main(int argc, char *argv[])
 			       2,6,8,
 			       2,8,4).finished().array()-1;
 
+    std::cout << edge_adjacency(V, F) << std::endl;
+    
+
     // Plot the mesh
-    igl::opengl::glfw::Viewer viewer;
+    Viewer viewer;
     
     Eigen::MatrixXd C(1, 3);
     C << 1, 0, 1;
@@ -46,7 +45,6 @@ int main(int argc, char *argv[])
     int closest = -1;
     bool mouse_is_down = false;
     float last_mouse_x(0), last_mouse_y(0);
-    
 
     viewer.callback_mouse_move = 
 	[&V,&F,&C, &closest, &mouse_is_down, &last_mouse_x, &last_mouse_y](igl::opengl::glfw::Viewer& viewer, int, int)->bool
@@ -58,12 +56,10 @@ int main(int argc, char *argv[])
 		double y = viewer.core().viewport(3) - viewer.current_mouse_y;
 
 		if (mouse_is_down && closest >= 0) {
-		    // deplacer closest
 		    float mouse_dx = x - last_mouse_x;
 		    float mouse_dy = y - last_mouse_y;
 		    Eigen::MatrixXf m = viewer.core().view.inverse();
-		    // std::cout << m.cols() << " " << m.rows() << std::endl;
-		    printf("dx %f dy %f\n", mouse_dx, mouse_dy);
+
 		    Eigen::Vector4f dmouse(mouse_dx, mouse_dy, 0, 0);
 		    Eigen::Vector4f dmouse_world = m * dmouse;
 
