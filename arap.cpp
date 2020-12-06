@@ -64,4 +64,16 @@ Eigen::SparseMatrix<double> cotangent_weights(const Mesh& mesh) {
     return weights;
 }
 
+Eigen::SparseMatrix<double> laplacian_matrix(const Mesh& mesh) {
+    Eigen::SparseMatrix<double> mat = -cotangent_weights(mesh);
 
+    for (int k=0; k<mat.outerSize(); ++k) {
+	double colsum = 0;
+	for (Eigen::SparseMatrix<double>::InnerIterator it(mat,k); it; ++it) {
+	    colsum += it.value();
+	}
+	mat.coeffRef(k, k) = -colsum;
+    }
+
+    return mat;
+}

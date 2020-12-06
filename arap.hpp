@@ -10,6 +10,6 @@ struct Mesh {
 };
 
 Eigen::SparseMatrix<bool> edge_adjacency(const Eigen::MatrixXd& V, const Eigen::MatrixXi& F);
-
 Eigen::SparseMatrix<double> cotangent_weights(const Mesh& mesh);
+Eigen::SparseMatrix<double> laplacian_matrix(const Mesh& mesh);
     

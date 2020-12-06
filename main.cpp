@@ -33,8 +33,8 @@ int main(int argc, char *argv[])
 			       2,6,8,
 			       2,8,4).finished().array()-1;
 
-    std::cout << edge_adjacency(V, F) << std::endl;
-    
+    Mesh m(V, F);
+    std::cout << laplacian_matrix(m);
 
     // Plot the mesh
     Viewer viewer;
