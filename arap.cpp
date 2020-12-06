@@ -50,8 +50,8 @@ Eigen::SparseMatrix<double> cotangent_weights(const Mesh& mesh) {
 	    
 	    double d2 = edges.row(j).squaredNorm();
 
-	    weights.coeffRef(v(j), v(k)) -= one_over_8area * d2 * .5;
-	    weights.coeffRef(v(k), v(j)) -= one_over_8area * d2 * .5;
+	    weights.coeffRef(v(j), v(k)) -= one_over_8area * d2;
+	    weights.coeffRef(v(k), v(j)) -= one_over_8area * d2;
 	    
 	    weights.coeffRef(v(i), v(j)) += one_over_8area * d2;
 	    weights.coeffRef(v(j), v(i)) += one_over_8area * d2;
