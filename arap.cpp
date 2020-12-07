@@ -110,34 +110,20 @@ Eigen::RowVector3d laplacian_rhs(
     const Mesh& mesh, const Eigen::SparseMatrix<double>& weights,
     std::vector<Eigen::Matrix3d> rotations, int v) {
 
-    Eigen::RowVector3d rval;
+    Eigen::RowVector3d rval(0, 0, 0);
     for (Eigen::SparseMatrix<double>::InnerIterator it(weights, v); it; ++it) {
-	rval += .5 * it.value() *
+	Eigen::RowVector3d d = .5 * it.value() *
 	    (mesh.V.row(it.col()) - mesh.V.row(it.row())) *
-	    (rotations[it.row()] * rotations[it.col()]).transpose();
+	    (rotations[it.row()] + rotations[it.col()]).transpose();
+	// std::cout << "Adding " << d << "\n";
+	// std::cout << "p[" << it.col() << "] - p[" << it.row() << "] = "
+		  // << (mesh.V.row(it.col()) - mesh.V.row(it.row())) << "\n";
+
+	rval += d;
     }
 
+    // std::cout << "Returning " << rval << "\n";
     return rval;
-}
-
-void setup_laplacian_system(const Mesh& mesh, const Eigen::MatrixXd& V0) {
-    Eigen::SparseMatrix<double> weights = cotangent_weights(mesh, {});
-    Eigen::SparseMatrix<double> lapmat = laplacian_matrix(weights);
-
-    std::vector<Eigen::Matrix3d> rotations(mesh.V.rows());
-    Eigen::Matrix<double, Eigen::Dynamic, 3> rhs;
-    rhs.resize(mesh.V.rows(), 3);
-
-    for (int i = 0; i < mesh.V.rows(); i++) {
-	rotations[i] = compute_best_rotation(mesh, weights, V0, i);
-    }
-    
-    for (int i = 0; i < mesh.V.rows(); i++) {
-	rhs.row(i) = laplacian_rhs(mesh, weights, rotations, i);
-    }
-
-    // now V' is such that :
-    // lapmat * V' = rhs
 }
 
 std::vector<int> swizzle_from(int n, std::vector<int> fixed_indices) {
@@ -175,7 +161,7 @@ void system_init(LaplacianSystem& system, Mesh* mesh) {
     system.is_bound = false;
 }
 
-void system_bind(LaplacianSystem& system, std::vector<int> fixed_indices) {
+bool system_bind(LaplacianSystem& system, std::vector<int> fixed_indices) {
     system.V0 = system.mesh->V;
     system.is_bound = true;
 
@@ -186,28 +172,85 @@ void system_bind(LaplacianSystem& system, std::vector<int> fixed_indices) {
 	
     system.cotangent_weights = cotangent_weights(*system.mesh, system.swizzle);
 
-    system.matrix = laplacian_matrix(system.cotangent_weights);
-    system.rhs.resize(system.free_dimension, 3);    
+    Eigen::SparseMatrix<double> m = laplacian_matrix(system.cotangent_weights);
+    system.laplacian_matrix = m.block(0, 0, system.free_dimension, system.free_dimension);
+    system.fixed_constraint_matrix = m.block(0, system.free_dimension,
+				      system.free_dimension, fixed_indices.size());
+    
+    system.rhs.resize(system.free_dimension, 3);
+
+    system.solver.compute(system.laplacian_matrix);
+    if (system.solver.info() != Eigen::Success) {
+	return false;
+    }
+    
+    return true;
 }
 
-void system_iterate(LaplacianSystem& system) {
+bool system_iterate(LaplacianSystem& system) {
     std::vector<Eigen::Matrix3d> rotations(system.mesh->V.rows());
     for (int i = 0; i < system.mesh->V.rows(); i++) {
 	rotations[i] = compute_best_rotation(*system.mesh,
 					     system.cotangent_weights,
 					     system.V0,
 					     system.swizzle[i]);
+	// std::cout << "rotation[" << i << "] = \n" << rotations[i] << "\n";
     }
-    
+
     for (int i = 0; i < system.free_dimension; i++) {
 	system.rhs.row(i) = laplacian_rhs(*system.mesh, system.cotangent_weights,
 					  rotations, system.deswizzle[i]);
     }
 
-    // @TODO
+    int n_fixed = system.mesh->V.rows() - system.free_dimension;
+    Eigen::Matrix<double, Eigen::Dynamic, 3>
+	V_fixed(n_fixed, 3);
+
+    for (int i = 0; i < n_fixed; i++) {
+	V_fixed.row(i) =
+	    system.mesh->V.row(system.deswizzle[system.free_dimension + i]);
+    }
+
+    // std::cout << "REAL RHS:\n" << system.rhs << "\n\n";
+
+    system.rhs -= system.fixed_constraint_matrix * V_fixed;
+
+    // std::cout << "RHS AFTER compensation :\n" << system.rhs << "\n\n";
+    
+    Eigen::Matrix<double, Eigen::Dynamic, 3> solutions(system.free_dimension, 3);
+    for (int i = 0; i < 3; i++) {
+	solutions.col(i) = system.solver.solve(system.rhs.col(i));
+	
+	if (system.solver.info() != Eigen::Success) {
+	    return false;
+	}
+	
+    // 	std::cout << "MATRIX :\n"
+    // 		  << system.laplacian_matrix
+    // 		  << "\nRIGHT HAND SIDE :\n"
+    // 		  << system.rhs.col(i)
+    // 		  << "\nSOLUTION :\n"
+    // 		  << solutions.col(i)
+    // 		  << "\nMATRIX * SOLUTION :\n"
+    // 		  << system.laplacian_matrix * solutions.col(i)
+    // 		  << "\n---------\n\n\n";
+    }
+
+    // std::cout << "SOLUTIONS :\n" << solutions << "\n\n";
+    
+    // std::cout << "MATRIX * SOLUTIONS :\n" << system.laplacian_matrix * solutions << "\n\n";
+    
+    for (int i = 0; i < system.free_dimension; i++) {
+	system.mesh->V.row(system.deswizzle[i]) = solutions.row(i);
+    }
+
+    return true;
 }
 
 void system_solve(LaplacianSystem& system) {
     // @TODO
+    for (int i = 0; i < 10; i++) {
+	system_iterate(system);
+    }
 }
 

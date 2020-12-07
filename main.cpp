@@ -46,8 +46,12 @@ int main(int argc, char *argv[])
     bool mouse_is_down = false;
     float last_mouse_x(0), last_mouse_y(0);
 
+    LaplacianSystem system;
+
+    system_init(system, &mesh);
+
     viewer.callback_mouse_move = 
-	[&mesh, &V0, &C, &closest, &mouse_is_down, &last_mouse_x, &last_mouse_y](igl::opengl::glfw::Viewer& viewer, int, int)->bool
+	[&mesh, &system, &V0, &C, &closest, &mouse_is_down, &last_mouse_x, &last_mouse_y](igl::opengl::glfw::Viewer& viewer, int, int)->bool
 	    {
 		int fid;
 		Eigen::Vector3f bc;
@@ -72,6 +76,10 @@ int main(int argc, char *argv[])
 
 		    last_mouse_x = x;
 		    last_mouse_y = y;
+
+		    viewer.data().set_points(mesh.V.row(closest), C);
+
+		    system_solve(system);
 		    
 		    return true;
 		}
@@ -138,12 +146,11 @@ int main(int argc, char *argv[])
 		return false;
 	    };
 
-    std::vector<int> s = swizzle_from(6, {1, 3, 4});
-    for (int i = 0; i < 6; i++) {
-	printf("%d ", s[i]);
+    if (!system_bind(system, {5, 6, 7})) {
+	std::cerr << "Failed to bind mesh\n" << std::endl;
+	return 1;
     }
-    printf("\n");
-    
+
     viewer.data().set_mesh(mesh.V, mesh.F);
     viewer.data().set_face_based(true);
     viewer.launch();
