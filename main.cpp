@@ -33,8 +33,8 @@ int main(int argc, char *argv[])
 			       2,6,8,
 			       2,8,4).finished().array()-1;
 
-    Mesh mesh(V0, F0);
-    auto weights = cotangent_weights(mesh);
+    Mesh mesh{V0, F0};
+    // auto weights = cotangent_weights(mesh);
 
     // Plot the mesh
     Viewer viewer;
@@ -47,7 +47,7 @@ int main(int argc, char *argv[])
     float last_mouse_x(0), last_mouse_y(0);
 
     viewer.callback_mouse_move = 
-	[&mesh, &weights, &V0, &C, &closest, &mouse_is_down, &last_mouse_x, &last_mouse_y](igl::opengl::glfw::Viewer& viewer, int, int)->bool
+	[&mesh, &V0, &C, &closest, &mouse_is_down, &last_mouse_x, &last_mouse_y](igl::opengl::glfw::Viewer& viewer, int, int)->bool
 	    {
 		int fid;
 		Eigen::Vector3f bc;
@@ -131,19 +131,18 @@ int main(int argc, char *argv[])
 	    };
 
     viewer.callback_mouse_up = 
-	[&mesh, &weights, &V0, &closest, &mouse_is_down](igl::opengl::glfw::Viewer& viewer, int, int)->bool
+	[&mesh, &V0, &closest, &mouse_is_down](igl::opengl::glfw::Viewer& viewer, int, int)->bool
 	    {
 		mouse_is_down = false;
 
-		if (closest > 0) {
-		    std::cout
-			<< compute_best_rotation(mesh, weights, V0, closest)
-			<< std::endl
-			<< std::endl;
-		}
-		
 		return false;
 	    };
+
+    std::vector<int> s = swizzle_from(6, {1, 3, 4});
+    for (int i = 0; i < 6; i++) {
+	printf("%d ", s[i]);
+    }
+    printf("\n");
     
     viewer.data().set_mesh(mesh.V, mesh.F);
     viewer.data().set_face_based(true);
