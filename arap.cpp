@@ -3,22 +3,7 @@
 #include <Eigen/Geometry>
 #include <iostream>
 
-Eigen::SparseMatrix<bool> edge_adjacency(const Eigen::MatrixXd& V, const Eigen::MatrixXi& F) {
-    Eigen::SparseMatrix<bool> adjacency(V.rows(), V.rows());
-    
-    for (int fid = 0; fid < F.rows(); fid++) {
-	for (int j = 0; j < 3; j++) {
-	    int k = (j + 1) % 3;
-	    int v1 = F(fid, j);
-	    int v2 = F(fid, k);
-	    adjacency.coeffRef(v1, v2) = adjacency.coeffRef(v2, v1) = true;
-	}
-    }
-
-    return adjacency;
-}
-
-Eigen::SparseMatrix<double> cotangent_weights(const Mesh& mesh, std::vector<int> swizzle) {
+Eigen::SparseMatrix<double> cotangent_weights(const Mesh& mesh, const std::vector<Eigen::Index>& swizzle) {
     Eigen::SparseMatrix<double> weights(mesh.V.rows(), mesh.V.rows());
 
     for (int fid = 0; fid < mesh.F.rows(); fid++) {
@@ -45,9 +30,9 @@ Eigen::SparseMatrix<double> cotangent_weights(const Mesh& mesh, std::vector<int>
 	    
 	    double d2 = edges.row(j).squaredNorm();
 
-	    int ci = swizzle[v(i)];
-	    int cj = swizzle[v(j)];
-	    int ck = swizzle[v(k)];
+	    int ci = v(i);
+	    int cj = v(j);
+	    int ck = v(k);
 
 	    weights.coeffRef(cj, ck) -= one_over_8area * d2;
 	    weights.coeffRef(ck, cj) -= one_over_8area * d2;
@@ -89,6 +74,9 @@ Eigen::Matrix3d compute_best_rotation(
 	Eigen::Vector3d e = mesh.V.row(it.col()) - mesh.V.row(it.row());
 	// @opti : e0 could be precomputed
 	Eigen::Vector3d e0 = V0.row(it.col()) - V0.row(it.row());
+
+	// std::cout << "e[" << it.row() << " -> " << it.col() << "] = " << e.transpose() << "\n";
+	
 	cov += it.value() * e0 * e.transpose();
     }
     
@@ -102,32 +90,14 @@ Eigen::Matrix3d compute_best_rotation(
 	um.col(2) *= -1;
 	rot = vm * um.transpose();
     }
-    
+
+    assert(fabs(rot.determinant() - 1.0) < 1e-3);
+
     return rot;
 }
 
-Eigen::RowVector3d laplacian_rhs(
-    const Mesh& mesh, const Eigen::SparseMatrix<double>& weights,
-    std::vector<Eigen::Matrix3d> rotations, int v) {
-
-    Eigen::RowVector3d rval(0, 0, 0);
-    for (Eigen::SparseMatrix<double>::InnerIterator it(weights, v); it; ++it) {
-	Eigen::RowVector3d d = .5 * it.value() *
-	    (mesh.V.row(it.col()) - mesh.V.row(it.row())) *
-	    (rotations[it.row()] + rotations[it.col()]).transpose();
-	// std::cout << "Adding " << d << "\n";
-	// std::cout << "p[" << it.col() << "] - p[" << it.row() << "] = "
-		  // << (mesh.V.row(it.col()) - mesh.V.row(it.row())) << "\n";
-
-	rval += d;
-    }
-
-    // std::cout << "Returning " << rval << "\n";
-    return rval;
-}
-
-std::vector<int> swizzle_from(int n, std::vector<int> fixed_indices) {
-    std::vector<int> swizzled(n);
+std::vector<Eigen::Index> swizzle_from(int n, const std::vector<Eigen::Index>& fixed_indices) {
+    std::vector<Eigen::Index> swizzled(n);
     
     int free_offset = 0;
     int fixed_offset = n - fixed_indices.size();
@@ -154,8 +124,8 @@ std::vector<int> swizzle_from(int n, std::vector<int> fixed_indices) {
     return swizzled;
 }
 
-std::vector<int> reciprocal(std::vector<int> v) {
-    std::vector<int> r(v.size());
+std::vector<Eigen::Index> reciprocal(const std::vector<Eigen::Index>& v) {
+    std::vector<Eigen::Index> r(v.size());
     for (int i = 0; i < v.size(); i++) {
 	r[v[i]] = i;
     }
@@ -167,7 +137,7 @@ void system_init(LaplacianSystem& system, Mesh* mesh) {
     system.is_bound = false;
 }
 
-bool system_bind(LaplacianSystem& system, std::vector<int> fixed_indices) {
+bool system_bind(LaplacianSystem& system, const std::vector<Eigen::Index>& fixed_indices) {
     system.V0 = system.mesh->V;
     system.is_bound = true;
 
@@ -189,23 +159,42 @@ bool system_bind(LaplacianSystem& system, std::vector<int> fixed_indices) {
     if (system.solver.info() != Eigen::Success) {
 	return false;
     }
+
+    std::cout << "Cotangent weights :\n" << system.cotangent_weights << "\n";
+    std::cout << "Laplacian matrix :\n" << system.laplacian_matrix << "\n";
+    std::cout << "A matrix :\n" << system.fixed_constraint_matrix << "\n";
     
     return true;
 }
 
 bool system_iterate(LaplacianSystem& system) {
+    /* --- Compute approximate rotations --- */
+    
     std::vector<Eigen::Matrix3d> rotations(system.mesh->V.rows());
     for (int i = 0; i < system.mesh->V.rows(); i++) {
 	rotations[i] = compute_best_rotation(*system.mesh,
 					     system.cotangent_weights,
 					     system.V0,
-					     system.swizzle[i]);
+					     i);
 	// std::cout << "rotation[" << i << "] = \n" << rotations[i] << "\n";
     }
 
-    for (int i = 0; i < system.free_dimension; i++) {
-	system.rhs.row(i) = laplacian_rhs(*system.mesh, system.cotangent_weights,
-					  rotations, system.deswizzle[i]);
+    /* --- Fill system's right hand side --- */
+    
+    system.rhs.setZero();
+
+    for (int v = 0; v < system.free_dimension; v++) {
+	for (Eigen::SparseMatrix<double>::InnerIterator
+		 it(system.cotangent_weights, v);
+	     it;
+	     ++it) {
+	    Eigen::RowVector3d d = .5 * it.value() *
+		(system.mesh->V.row(it.col()) - system.mesh->V.row(it.row())) *
+		(rotations[it.row()] + rotations[it.col()]); //.transpose();
+	    // std::cout << "p[" << it.col() << "] - p[" << it.row() << "] = "
+	    // << (mesh.V.row(it.col()) - mesh.V.row(it.row())) << "\n";
+	    system.rhs.row(v) += d;
+	}
     }
 
     int n_fixed = system.mesh->V.rows() - system.free_dimension;
@@ -214,14 +203,11 @@ bool system_iterate(LaplacianSystem& system) {
 
     for (int i = 0; i < n_fixed; i++) {
 	V_fixed.row(i) =
-	    system.mesh->V.row(system.deswizzle[system.free_dimension + i]);
+	    system.V0.row(system.free_dimension + i);
     }
-
-    // std::cout << "REAL RHS:\n" << system.rhs << "\n\n";
 
     system.rhs -= system.fixed_constraint_matrix * V_fixed;
 
-    // std::cout << "RHS AFTER compensation :\n" << system.rhs << "\n\n";
     
     Eigen::Matrix<double, Eigen::Dynamic, 3> solutions(system.free_dimension, 3);
     for (int i = 0; i < 3; i++) {
@@ -230,25 +216,15 @@ bool system_iterate(LaplacianSystem& system) {
 	if (system.solver.info() != Eigen::Success) {
 	    return false;
 	}
-	
-    // 	std::cout << "MATRIX :\n"
-    // 		  << system.laplacian_matrix
-    // 		  << "\nRIGHT HAND SIDE :\n"
-    // 		  << system.rhs.col(i)
-    // 		  << "\nSOLUTION :\n"
-    // 		  << solutions.col(i)
-    // 		  << "\nMATRIX * SOLUTION :\n"
-    // 		  << system.laplacian_matrix * solutions.col(i)
-    // 		  << "\n---------\n\n\n";
+    }
+    assert((system.laplacian_matrix * solutions
+	    - system.rhs).norm() < 1e-3);
+
+    for (int i = 0; i < system.free_dimension; i++) {
+	system.mesh->V.row(i) = solutions.row(i);
     }
 
-    // std::cout << "SOLUTIONS :\n" << solutions << "\n\n";
-    
-    // std::cout << "MATRIX * SOLUTIONS :\n" << system.laplacian_matrix * solutions << "\n\n";
-    
-    for (int i = 0; i < system.free_dimension; i++) {
-	system.mesh->V.row(system.deswizzle[i]) = solutions.row(i);
-    }
+    // std::cout << "Solutions :\n" << solutions << "\n\n";
 
     return true;
 }
