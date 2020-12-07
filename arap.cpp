@@ -152,6 +152,12 @@ std::vector<int> swizzle_from(int n, std::vector<int> fixed_indices) {
     }
 
     //DEBUG
+    std::cout << "fixed indices: ";
+    for (int i = 0; i < index_indices.size(); i++) {
+        std::cout << index_indices[i] << ", ";
+    }
+    std::cout << std::endl;
+
     std::cout << "swizzled: ";
     for (int i = 0; i < swizzled.size(); i++) {
         std::cout << swizzled[i] << ", ";
