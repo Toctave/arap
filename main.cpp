@@ -146,7 +146,7 @@ int main(int argc, char *argv[])
 		return false;
 	    };
 
-    if (!system_bind(system, {5, 6, 7})) {
+    if (!system_bind(system, {0, 6, 7})) {
 	std::cerr << "Failed to bind mesh\n" << std::endl;
 	return 1;
     }

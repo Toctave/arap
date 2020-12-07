@@ -133,17 +133,30 @@ std::vector<int> swizzle_from(int n, std::vector<int> fixed_indices) {
     int fixed_offset = n - fixed_indices.size();
 
     int counter = 0;
-    
+
     for (int fi : fixed_indices) {
 	for (; counter < fi; counter++) {
 	    swizzled[counter] = free_offset++;
 	}
-	swizzled[counter++] = fixed_offset++;
+    free_offset++;
     }
 
-    while (counter < n) {
+    //Completing free indices
+    while (counter < fixed_offset) {
 	swizzled[counter++] = free_offset++;
     }
+
+    //Completing fixed indices
+    for (int i = 0; i < fixed_indices.size(); i++) {
+        swizzled[fixed_offset + i] = fixed_indices[i];
+    }
+
+    //DEBUG
+    std::cout << "swizzled: ";
+    for (int i = 0; i < swizzled.size(); i++) {
+        std::cout << swizzled[i] << ", ";
+    }
+    std::cout << std::endl;
 
     return swizzled;
 }
