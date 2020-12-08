@@ -195,7 +195,7 @@ bool system_iterate(LaplacianSystem& system) {
 	     it;
 	     ++it) {
 	    Eigen::RowVector3d d = .5 * it.value() *
-		(system.mesh->V.row(it.col()) - system.mesh->V.row(it.row())) *
+		(system.V0.row(it.col()) - system.V0.row(it.row())) *
 		(rotations[it.row()] + rotations[it.col()]); //.transpose();
 	    // std::cout << "p[" << it.col() << "] - p[" << it.row() << "] = "
 	    // << (mesh.V.row(it.col()) - mesh.V.row(it.row())) << "\n";
@@ -213,7 +213,6 @@ bool system_iterate(LaplacianSystem& system) {
     }
 
     system.rhs -= system.fixed_constraint_matrix * V_fixed;
-
     
     Eigen::Matrix<double, Eigen::Dynamic, 3> solutions(system.free_dimension, 3);
     for (int i = 0; i < 3; i++) {
