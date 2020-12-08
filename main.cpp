@@ -1,37 +1,67 @@
 #include <igl/opengl/glfw/Viewer.h>
 #include <igl/unproject_onto_mesh.h>
+#include <igl/readOFF.h>
+#include <igl/readOBJ.h>
+
 #include <cstdio>
 #include <iostream>
+#include <string>
 
 #include "arap.hpp"
 
 using igl::opengl::glfw::Viewer;
 
+bool hasEnding (std::string const &fullString, std::string const &ending) {
+    if (fullString.length() >= ending.length()) {
+        return (0 == fullString.compare (fullString.length() - ending.length(), ending.length(), ending));
+    } else {
+        return false;
+    }
+}
+
 int main(int argc, char *argv[])
 {
     // Inline mesh of a cube
-    const Eigen::MatrixXd V0 = (Eigen::MatrixXd(8,3)<<
-			      0.0,0.0,0.0,
-			      0.0,0.0,1.0,
-			      0.0,1.0,0.0,
-			      0.0,1.0,1.0,
-			      1.0,0.0,0.0,
-			      1.0,0.0,1.0,
-			      1.0,1.0,0.0,
-			      1.0,1.0,1.0).finished();
-    const Eigen::MatrixXi F0 = (Eigen::MatrixXi(12,3)<<
-			       1,7,5,
-			       1,3,7,
-			       1,4,3,
-			       1,2,4,
-			       3,8,7,
-			       3,4,8,
-			       5,7,8,
-			       5,8,6,
-			       1,5,6,
-			       1,6,2,
-			       2,6,8,
-			       2,8,4).finished().array()-1;
+    // const Eigen::MatrixXd V0 = (Eigen::MatrixXd(8,3)<<
+    // 			      0.0,0.0,0.0,
+    // 			      0.0,0.0,1.0,
+    // 			      0.0,1.0,0.0,
+    // 			      0.0,1.0,1.0,
+    // 			      1.0,0.0,0.0,
+    // 			      1.0,0.0,1.0,
+    // 			      1.0,1.0,0.0,
+    // 			      1.0,1.0,1.0).finished();
+    // const Eigen::MatrixXi F0 = (Eigen::MatrixXi(12,3)<<
+    // 			       1,7,5,
+    // 			       1,3,7,
+    // 			       1,4,3,
+    // 			       1,2,4,
+    // 			       3,8,7,
+    // 			       3,4,8,
+    // 			       5,7,8,
+    // 			       5,8,6,
+    // 			       1,5,6,
+    // 			       1,6,2,
+    // 			       2,6,8,
+    // 			       2,8,4).finished().array()-1;
+
+    Eigen::MatrixXd V0;
+    Eigen::MatrixXi F0;
+
+    if (argc != 2) {
+	std::cerr << "Usage : ./example <model file>\n";
+	return 1;
+    }
+    
+    std::string filename(argv[1]);
+    if (hasEnding(filename, ".off")) {
+	igl::readOFF(argv[1], V0, F0);
+    } else if (hasEnding(filename, ".obj")) {
+	igl::readOBJ(argv[1], V0, F0);
+    } else {
+	std::cerr << "Cannot recognize file " << filename << std::endl;
+	return 1;
+    }
 
     Mesh mesh{V0, F0};
     // auto weights = cotangent_weights(mesh);
@@ -146,10 +176,16 @@ int main(int argc, char *argv[])
 		return false;
 	    };
 
-    if (!system_bind(system, {0, 6, 7})) {
-	std::cerr << "Failed to bind mesh\n" << std::endl;
-	return 1;
+    std::vector<Eigen::Index> fixed = {
+	5, 6, 7
+    };
+
+    if (!system_bind(system, fixed)) {
+    	std::cerr << "Failed to bind mesh\n" << std::endl;
+    	return 1;
     }
+
+    system_solve(system);
 
     viewer.data().set_mesh(mesh.V, mesh.F);
     viewer.data().set_face_based(true);

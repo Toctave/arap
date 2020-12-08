@@ -5,6 +5,8 @@
 
 Eigen::SparseMatrix<double> cotangent_weights(const Mesh& mesh, const std::vector<Eigen::Index>& swizzle) {
     Eigen::SparseMatrix<double> weights(mesh.V.rows(), mesh.V.rows());
+    std::vector<Eigen::Triplet<double>> triplets;
+    triplets.reserve(6 * mesh.F.rows());
 
     for (int fid = 0; fid < mesh.F.rows(); fid++) {
 	Eigen::Vector3i v(
@@ -34,16 +36,20 @@ Eigen::SparseMatrix<double> cotangent_weights(const Mesh& mesh, const std::vecto
 	    int cj = v(j);
 	    int ck = v(k);
 
-	    weights.coeffRef(cj, ck) -= one_over_8area * d2;
-	    weights.coeffRef(ck, cj) -= one_over_8area * d2;
+	    double contribution = one_over_8area * d2;
+
+	    triplets.push_back(Eigen::Triplet<double>(cj, ck, -contribution));
+	    triplets.push_back(Eigen::Triplet<double>(ck, cj, -contribution));
 	    
-	    weights.coeffRef(ci, cj) += one_over_8area * d2;
-	    weights.coeffRef(cj, ci) += one_over_8area * d2;
+	    triplets.push_back(Eigen::Triplet<double>(ci, cj, contribution));
+	    triplets.push_back(Eigen::Triplet<double>(cj, ci, contribution));
 	    
-	    weights.coeffRef(ci, ck) += one_over_8area * d2;
-	    weights.coeffRef(ck, ci) += one_over_8area * d2;
+	    triplets.push_back(Eigen::Triplet<double>(ci, ck, contribution));
+	    triplets.push_back(Eigen::Triplet<double>(ck, ci, contribution));
 	}
     }
+
+    weights.setFromTriplets(triplets.begin(), triplets.end());
 
     return weights;
 }
@@ -160,9 +166,9 @@ bool system_bind(LaplacianSystem& system, const std::vector<Eigen::Index>& fixed
 	return false;
     }
 
-    std::cout << "Cotangent weights :\n" << system.cotangent_weights << "\n";
-    std::cout << "Laplacian matrix :\n" << system.laplacian_matrix << "\n";
-    std::cout << "A matrix :\n" << system.fixed_constraint_matrix << "\n";
+    // std::cout << "Cotangent weights :\n" << system.cotangent_weights << "\n";
+    // std::cout << "Laplacian matrix :\n" << system.laplacian_matrix << "\n";
+    // std::cout << "A matrix :\n" << system.fixed_constraint_matrix << "\n";
     
     return true;
 }
