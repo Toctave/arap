@@ -177,7 +177,7 @@ int main(int argc, char *argv[])
 	    };
 
     std::vector<Eigen::Index> fixed = {
-	5, 6, 7
+	4, 5
     };
 
     if (!system_bind(system, fixed)) {
