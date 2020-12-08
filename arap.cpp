@@ -32,9 +32,9 @@ Eigen::SparseMatrix<double> cotangent_weights(const Mesh& mesh, const std::vecto
 	    
 	    double d2 = edges.row(j).squaredNorm();
 
-	    int ci = v(i);
-	    int cj = v(j);
-	    int ck = v(k);
+	    int ci = swizzle[v(i)];
+	    int cj = swizzle[v(j)];
+	    int ck = swizzle[v(k)];
 
 	    double contribution = one_over_8area * d2;
 
@@ -70,19 +70,19 @@ Eigen::SparseMatrix<double> laplacian_matrix(
     return mat;
 }
 
-Eigen::Matrix3d compute_best_rotation(
-    const Mesh& mesh, const Eigen::SparseMatrix<double>& weights,
-    const Eigen::MatrixXd& V0, int v) {
-    
+Eigen::Matrix3d compute_best_rotation(const LaplacianSystem& system, int r) {
     Eigen::Matrix3d cov;
 
-    for (Eigen::SparseMatrix<double>::InnerIterator it(weights, v); it; ++it) {
-	Eigen::Vector3d e = mesh.V.row(it.col()) - mesh.V.row(it.row());
-	// @opti : e0 could be precomputed
-	Eigen::Vector3d e0 = V0.row(it.col()) - V0.row(it.row());
-
-	// std::cout << "e[" << it.row() << " -> " << it.col() << "] = " << e.transpose() << "\n";
+    for (Eigen::SparseMatrix<double>::InnerIterator it(system.cotangent_weights, r); it; ++it) {
+	Eigen::Index v_idx[2] = {
+	    system.deswizzle[it.col()],
+	    system.deswizzle[it.row()]
+	};
 	
+	Eigen::Vector3d e = system.mesh->V.row(v_idx[0]) - system.mesh->V.row(v_idx[1]);
+	// @opti : e0 could be precomputed
+	Eigen::Vector3d e0 = system.V0.row(v_idx[0]) - system.V0.row(v_idx[1]);
+
 	cov += it.value() * e0 * e.transpose();
     }
     
@@ -108,25 +108,20 @@ std::vector<Eigen::Index> swizzle_from(int n, const std::vector<Eigen::Index>& f
     int free_offset = 0;
     int fixed_offset = n - fixed_indices.size();
 
-    int counter = 0;
-
-    for (int fi : fixed_indices) {
-	for (; counter < fi; counter++) {
-	    swizzled[counter] = free_offset++;
-	}
-	free_offset++;
-    }
-
-    //Completing free indices
-    while (counter < fixed_offset) {
-	swizzled[counter++] = free_offset++;
-    }
-
-    //Completing fixed indices
+    int swizzled_offset = 0;
+    
     for (int i = 0; i < fixed_indices.size(); i++) {
-        swizzled[fixed_offset + i] = fixed_indices[i];
+	for (; swizzled_offset < fixed_indices[i]; swizzled_offset++) {
+	    swizzled[swizzled_offset] = free_offset++;
+	}
+	swizzled[swizzled_offset] = fixed_offset++;
+	swizzled_offset++;
     }
-
+    
+    for (; swizzled_offset < n; swizzled_offset++) {
+	swizzled[swizzled_offset] = free_offset++;
+    }
+    
     return swizzled;
 }
 
@@ -178,10 +173,7 @@ bool system_iterate(LaplacianSystem& system) {
     
     std::vector<Eigen::Matrix3d> rotations(system.mesh->V.rows());
     for (int i = 0; i < system.mesh->V.rows(); i++) {
-	rotations[i] = compute_best_rotation(*system.mesh,
-					     system.cotangent_weights,
-					     system.V0,
-					     i);
+	rotations[i] = compute_best_rotation(system, i);
 	// std::cout << "rotation[" << i << "] = \n" << rotations[i] << "\n";
     }
 
@@ -194,9 +186,14 @@ bool system_iterate(LaplacianSystem& system) {
 		 it(system.cotangent_weights, v);
 	     it;
 	     ++it) {
+	    Eigen::Index v_idx[2] = {
+		system.deswizzle[it.col()],
+		system.deswizzle[it.row()],
+	    };
+	    
 	    Eigen::RowVector3d d = .5 * it.value() *
-		(system.V0.row(it.col()) - system.V0.row(it.row())) *
-		(rotations[it.row()] + rotations[it.col()]); //.transpose();
+		(system.V0.row(v_idx[0]) - system.V0.row(v_idx[1])) *
+		(rotations[it.row()] + rotations[it.col()]).transpose();
 	    // std::cout << "p[" << it.col() << "] - p[" << it.row() << "] = "
 	    // << (mesh.V.row(it.col()) - mesh.V.row(it.row())) << "\n";
 	    system.rhs.row(v) += d;
@@ -209,7 +206,7 @@ bool system_iterate(LaplacianSystem& system) {
 
     for (int i = 0; i < n_fixed; i++) {
 	V_fixed.row(i) =
-	    system.V0.row(system.free_dimension + i);
+	    system.V0.row(system.deswizzle[system.free_dimension + i]);
     }
 
     system.rhs -= system.fixed_constraint_matrix * V_fixed;
@@ -226,7 +223,9 @@ bool system_iterate(LaplacianSystem& system) {
 	    - system.rhs).norm() < 1e-3);
 
     for (int i = 0; i < system.free_dimension; i++) {
-	system.mesh->V.row(i) = solutions.row(i);
+	// std::cout << "Editing vertex #" << system.deswizzle[i] << std::endl;
+	system.mesh->V.row(system.deswizzle[i])
+	    = solutions.row(i);
     }
 
     // std::cout << "Solutions :\n" << solutions << "\n\n";
@@ -236,7 +235,7 @@ bool system_iterate(LaplacianSystem& system) {
 
 void system_solve(LaplacianSystem& system) {
     // @TODO
-    for (int i = 0; i < 10; i++) {
+    for (int i = 0; i < 3; i++) {
 	system_iterate(system);
     }
 }

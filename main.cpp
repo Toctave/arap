@@ -7,6 +7,8 @@
 #include <iostream>
 #include <string>
 
+#include <cstdlib>
+
 #include "arap.hpp"
 
 using igl::opengl::glfw::Viewer;
@@ -21,35 +23,11 @@ bool hasEnding (std::string const &fullString, std::string const &ending) {
 
 int main(int argc, char *argv[])
 {
-    // Inline mesh of a cube
-    // const Eigen::MatrixXd V0 = (Eigen::MatrixXd(8,3)<<
-    // 			      0.0,0.0,0.0,
-    // 			      0.0,0.0,1.0,
-    // 			      0.0,1.0,0.0,
-    // 			      0.0,1.0,1.0,
-    // 			      1.0,0.0,0.0,
-    // 			      1.0,0.0,1.0,
-    // 			      1.0,1.0,0.0,
-    // 			      1.0,1.0,1.0).finished();
-    // const Eigen::MatrixXi F0 = (Eigen::MatrixXi(12,3)<<
-    // 			       1,7,5,
-    // 			       1,3,7,
-    // 			       1,4,3,
-    // 			       1,2,4,
-    // 			       3,8,7,
-    // 			       3,4,8,
-    // 			       5,7,8,
-    // 			       5,8,6,
-    // 			       1,5,6,
-    // 			       1,6,2,
-    // 			       2,6,8,
-    // 			       2,8,4).finished().array()-1;
-
     Eigen::MatrixXd V0;
     Eigen::MatrixXi F0;
 
-    if (argc != 2) {
-	std::cerr << "Usage : ./example <model file>\n";
+    if (argc < 5) {
+	std::cerr << "Usage : ./example <model file> <3 or more fixed indices>\n";
 	return 1;
     }
     
@@ -176,16 +154,39 @@ int main(int argc, char *argv[])
 		return false;
 	    };
 
-    std::vector<Eigen::Index> fixed = {
-	4, 5
-    };
+    viewer.callback_key_down = 
+	[&mesh, &closest, &system](igl::opengl::glfw::Viewer& viewer, unsigned char key, int modifier)->bool
+	    {
+		if (key == 'U') { //marche aussi avecCtrl
+		    mesh.V(5,0) += 1;
+		    closest = 0;
+		    viewer.data().set_mesh(mesh.V, mesh.F);
+		    return true;
+		}
+
+		if (key == 'S') {
+		    std::cout << std::endl << "Points: " << std::endl << mesh.V << std::endl;
+
+		    system_solve(system);
+		    viewer.data().set_mesh(mesh.V, mesh.F);
+
+		    std::cout << std::endl << "Points: " << std::endl << mesh.V << std::endl;
+		    return true;
+		}
+		return false;
+	    };
+    
+    std::vector<Eigen::Index> fixed(argc - 2);
+    for (int i = 0; i < argc - 2; i++) {
+	fixed[i] = atoi(argv[i + 2]);
+    }
 
     if (!system_bind(system, fixed)) {
     	std::cerr << "Failed to bind mesh\n" << std::endl;
     	return 1;
     }
 
-    system_solve(system);
+    // system_solve(system);
 
     viewer.data().set_mesh(mesh.V, mesh.F);
     viewer.data().set_face_based(true);

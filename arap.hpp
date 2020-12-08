@@ -23,6 +23,8 @@ struct LaplacianSystem {
     Eigen::Matrix<double, Eigen::Dynamic, 3> rhs;
 };
 
+std::vector<Eigen::Index> swizzle_from(int n, const std::vector<Eigen::Index>& fixed_indices);
+
 void system_init(LaplacianSystem& system, Mesh* mesh);
 bool system_bind(LaplacianSystem& system, const std::vector<Eigen::Index>& fixed_indices);
 void system_solve(LaplacianSystem& system);
