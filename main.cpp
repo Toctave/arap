@@ -22,25 +22,25 @@ bool hasEnding (std::string const &fullString, std::string const &ending) {
     }
 }
 
-Eigen::Index select_point(float x, float y,
-			  const Mesh& mesh, const std::vector<Eigen::Index>& group,
-			  Eigen::Matrix4f view, Eigen::Matrix4f proj,
-			  Eigen::Vector4f viewport, float point_size) {
-    Eigen::Vector2f mouse(x, y);
+Eigen::Index closest_point(Eigen::Vector2f mouse,
+			   const Mesh& mesh, const std::vector<Eigen::Index>& group,
+			   Eigen::Matrix4f view, Eigen::Matrix4f proj,
+			   Eigen::Vector2f point_size) {
     float closest = -1;
-    float threshold = point_size * point_size / 4;
     Eigen::Index chosen = -1;
+
+    float threshold = point_size.squaredNorm();
 
     Eigen::Vector4f p;
     p(3) = 1;
     for (int i = 0; i < group.size(); i++) {
 	p.block<3, 1>(0, 0) = mesh.V.row(group[i]).cast<float>();
-	Eigen::Vector4f projected = (proj * view * p).transpose();
+	Eigen::Vector4f projected = (proj * view * p);
 	projected /= projected(3);
 
-	Eigen::Vector2f projected_pixels = (projected.block<2, 1>(0, 0).array() + 1.) * viewport.block<2, 1>(2, 0).array() / 2.;
+	// Eigen::Vector2f projected_pixels = (projected.block<2, 1>(0, 0).array() + 1.) * viewport.block<2, 1>(2, 0).array() / 2.;
 	
-	if ((projected_pixels - mouse).squaredNorm() <= threshold
+	if ((projected.block<2, 1>(0, 0) - mouse).squaredNorm() <= threshold
 	    && (closest < 0 || projected(2) < closest)) {
 	    closest = projected(2);
 	    chosen = group[i];
@@ -54,6 +54,36 @@ void update_group(const Eigen::MatrixXd& V, const std::vector<Eigen::Index>& gro
     for (int i = 0; i < group.size(); i++) {
 	group_pos.row(i) = V.row(group[i]);
     }
+}
+
+Eigen::Vector2f mouse_position(const Viewer& viewer) {
+    Eigen::Vector2f dimensions = viewer.core().viewport.block<2, 1>(2, 0);
+    Eigen::Vector2f mouse_pos(
+	viewer.current_mouse_x,
+	viewer.core().viewport(3) - viewer.current_mouse_y
+	);
+
+    mouse_pos.array() = 2. * mouse_pos.array() / dimensions.array() - 1.;
+
+    return mouse_pos;
+}
+
+Eigen::Vector4f unproject_mouse(const Viewer& viewer, Eigen::Vector3f point) {
+    Eigen::Vector2f mouse_pos = mouse_position(viewer);
+    Eigen::Matrix4f viewproj = viewer.core().proj * viewer.core().view;
+
+    Eigen::Vector4f point_homo;
+    
+    point_homo.block<3, 1>(0, 0) = point.cast<float>();
+    point_homo(3) = 1.;
+    Eigen::Vector4f projected_sel = viewproj * point_homo;
+    projected_sel /= projected_sel(3);
+
+    Eigen::Vector4f mouse_homo(mouse_pos(0), mouse_pos(1), projected_sel(2), 1.);
+    Eigen::Vector4f unprojected_mouse = viewproj.inverse() * mouse_homo;
+    unprojected_mouse /= unprojected_mouse(3);
+
+    return unprojected_mouse;
 }
 
 int main(int argc, char *argv[])
@@ -86,12 +116,10 @@ int main(int argc, char *argv[])
     Eigen::MatrixXd highlighted_colors;
 
     struct {
-	int selected = -1;
+	Eigen::Index selected = -1;
 	bool down = false;
-	bool dragging = false;
-	float last_x;
-	float last_y;
-    } mouse = {-1, false, 0, 0};
+	Eigen::Vector4f last_pos;
+    } mouse;
 
     LaplacianSystem system;
     std::vector<Eigen::Index> fixed(argc - 2);
@@ -99,59 +127,43 @@ int main(int argc, char *argv[])
     system_init(system, &mesh);
 
     viewer.callback_mouse_move = 
-	[&fixed, &mesh, &system, &V0, &highlighted_colors, &highlighted_points, &mouse](igl::opengl::glfw::Viewer& viewer, int, int)->bool
+	[&fixed, &system, &highlighted_colors, &highlighted_points, &mouse](igl::opengl::glfw::Viewer& viewer, int, int)->bool
 	    {
-		int fid;
-		Eigen::Vector3f bc;
-		// Cast a ray in the view direction starting from the mouse position
-		double x = viewer.current_mouse_x;
-		double y = viewer.core().viewport(3) - viewer.current_mouse_y;
+		if (mouse.down && mouse.selected >= 0) {
+		    Eigen::Vector4f unprojected_mouse = unproject_mouse(viewer, system.mesh->V.row(mouse.selected).cast<float>());
+		    Eigen::Vector4f mouse_delta = unprojected_mouse - mouse.last_pos;
+		    mouse.last_pos = unprojected_mouse;
 
-		Eigen::Index closest = select_point(x, y,
-				       mesh, fixed,
-				       viewer.core().view,
-				       viewer.core().proj,
-				       viewer.core().viewport,
-				       viewer.data().point_size);
+		    system.mesh->V.row(mouse.selected) += mouse_delta.block<3, 1>(0, 0).cast<double>();
 
-		bool ignore_camera = false;
-
-		if (mouse.down && !mouse.dragging && closest >= 0) {
-		    mouse.dragging = true;
-		    mouse.selected = closest;
-		}
-
-		if (mouse.dragging) {
-		    float mouse_dx = x - mouse.last_x;
-		    float mouse_dy = y - mouse.last_y;
-		    Eigen::MatrixXf m = viewer.core().view.inverse();
-
-		    Eigen::Vector4f dmouse(mouse_dx, mouse_dy, 0, 0);
-		    Eigen::Vector4f dmouse_world = m * dmouse;
-
-		    float speed = .01;
-		    mesh.V(mouse.selected, 0) += dmouse_world(0) * speed;
-		    mesh.V(mouse.selected, 1) += dmouse_world(1) * speed;
-		    mesh.V(mouse.selected, 2) += dmouse_world(2) * speed;
-
-		    system_solve(system);
-		    
-		    viewer.data().set_mesh(mesh.V, mesh.F);
-		    update_group(mesh.V, fixed, highlighted_points);
+		    update_group(system.mesh->V, fixed, highlighted_points);
 		    viewer.data().set_points(highlighted_points, highlighted_colors);
-			
-		    ignore_camera = true;
-		}
-		mouse.last_x = x;
-		mouse.last_y = y;
 
-		return ignore_camera;
+		    return true;
+		}
+
+		return false;
 	    };
 
     viewer.callback_mouse_down = 
-	[&mouse](igl::opengl::glfw::Viewer& viewer, int, int)->bool
+	[&mouse, &system, &fixed](igl::opengl::glfw::Viewer& viewer, int, int)->bool
 	    {
+		Eigen::Vector2f dimensions = viewer.core().viewport.block<2, 1>(2, 0);
+		Eigen::Vector2f point_size = viewer.data().point_size / dimensions.array();
+		
 		mouse.down = true;
+
+		Eigen::Index closest = closest_point(mouse_position(viewer),
+						     *system.mesh, fixed,
+						     viewer.core().view,
+						     viewer.core().proj,
+						     point_size);
+		mouse.selected = closest;
+
+		if (closest >= 0) {
+		    mouse.last_pos = unproject_mouse(viewer, system.mesh->V.row(mouse.selected).cast<float>());
+		}
+		
 		return false;
 	    };
 
@@ -159,13 +171,20 @@ int main(int argc, char *argv[])
 	[&mouse](igl::opengl::glfw::Viewer& viewer, int, int)->bool
 	    {
 		mouse.down = false;
-		mouse.dragging = false;
 
 		return false;
 	    };
 
-    highlighted_points.resize(argc - 1, 3);
-    highlighted_colors.resize(argc - 1, 3);
+    viewer.callback_pre_draw =
+	[&system, &mesh](Viewer& viewer) -> bool
+	    {
+		system_iterate(system);
+		viewer.data().set_vertices(mesh.V);
+		return false;
+	    };
+
+    highlighted_points.resize(argc - 2, 3);
+    highlighted_colors.resize(argc - 2, 3);
     
     for (int i = 0; i < argc - 2; i++) {
 	fixed[i] = atoi(argv[i + 2]);
@@ -178,7 +197,7 @@ int main(int argc, char *argv[])
     	return 1;
     }
 
-    // system_solve(system);
+    system_solve(system);
 
     std::cout << viewer.data().point_size << std::endl;
     viewer.data().set_points(highlighted_points, highlighted_colors);

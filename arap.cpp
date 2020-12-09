@@ -2,6 +2,7 @@
 #include <Eigen/Core>
 #include <Eigen/Geometry>
 #include <iostream>
+#include <algorithm> // std::sort
 
 Eigen::SparseMatrix<double> cotangent_weights(const Mesh& mesh, const std::vector<Eigen::Index>& swizzle) {
     Eigen::SparseMatrix<double> weights(mesh.V.rows(), mesh.V.rows());
@@ -73,11 +74,14 @@ Eigen::SparseMatrix<double> laplacian_matrix(
 Eigen::Matrix3d compute_best_rotation(const LaplacianSystem& system, int r) {
     Eigen::Matrix3d cov;
 
+    // std::cout << "Neighbors of " << system.deswizzle[r] << " : ";
     for (Eigen::SparseMatrix<double>::InnerIterator it(system.cotangent_weights, r); it; ++it) {
 	Eigen::Index v_idx[2] = {
 	    system.deswizzle[it.col()],
 	    system.deswizzle[it.row()]
 	};
+
+	// std::cout << "(" << v_idx[1] << ", " << it.value() << ") ";
 	
 	Eigen::Vector3d e = system.mesh->V.row(v_idx[0]) - system.mesh->V.row(v_idx[1]);
 	// @opti : e0 could be precomputed
@@ -85,6 +89,7 @@ Eigen::Matrix3d compute_best_rotation(const LaplacianSystem& system, int r) {
 
 	cov += it.value() * e0 * e.transpose();
     }
+    // std::cout << std::endl;
     
     Eigen::JacobiSVD<Eigen::Matrix3d> svd(cov, Eigen::ComputeFullU | Eigen::ComputeFullV);
 
@@ -103,15 +108,18 @@ Eigen::Matrix3d compute_best_rotation(const LaplacianSystem& system, int r) {
 }
 
 std::vector<Eigen::Index> swizzle_from(int n, const std::vector<Eigen::Index>& fixed_indices) {
+    auto sorted_fixed_indices = fixed_indices;
+    std::sort(sorted_fixed_indices.begin(), sorted_fixed_indices.end());
+    
     std::vector<Eigen::Index> swizzled(n);
     
-    int free_offset = 0;
-    int fixed_offset = n - fixed_indices.size();
+    size_t free_offset = 0;
+    size_t fixed_offset = n - sorted_fixed_indices.size();
 
-    int swizzled_offset = 0;
+    size_t swizzled_offset = 0;
     
-    for (int i = 0; i < fixed_indices.size(); i++) {
-	for (; swizzled_offset < fixed_indices[i]; swizzled_offset++) {
+    for (int i = 0; i < sorted_fixed_indices.size(); i++) {
+	for (; swizzled_offset < sorted_fixed_indices[i]; swizzled_offset++) {
 	    swizzled[swizzled_offset] = free_offset++;
 	}
 	swizzled[swizzled_offset] = fixed_offset++;
@@ -206,7 +214,7 @@ bool system_iterate(LaplacianSystem& system) {
 
     for (int i = 0; i < n_fixed; i++) {
 	V_fixed.row(i) =
-	    system.V0.row(system.deswizzle[system.free_dimension + i]);
+	    system.mesh->V.row(system.deswizzle[system.free_dimension + i]);
     }
 
     system.rhs -= system.fixed_constraint_matrix * V_fixed;
@@ -235,7 +243,7 @@ bool system_iterate(LaplacianSystem& system) {
 
 void system_solve(LaplacianSystem& system) {
     // @TODO
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 5; i++) {
 	system_iterate(system);
     }
 }
