@@ -130,9 +130,6 @@ int main(int argc, char *argv[])
     }
 
     Mesh mesh{V0, F0};
-    // auto weights = cotangent_weights(mesh);
-
-    // Plot the mesh
     Viewer viewer;
 
     struct {
@@ -221,7 +218,7 @@ int main(int argc, char *argv[])
     viewer.callback_pre_draw =
 	[&system, &mesh](Viewer& viewer) -> bool
 	    {
-		system_iterate(system);
+		system_solve(system, 1);
 		viewer.data().set_vertices(mesh.V);
 		return false;
 	    };
@@ -255,8 +252,6 @@ int main(int argc, char *argv[])
     	std::cerr << "Failed to bind mesh\n" << std::endl;
     	return 1;
     }
-
-    system_solve(system);
 
     std::cout << viewer.data().point_size << std::endl;
     viewer.data().set_points(highlighted_points, highlighted_colors);

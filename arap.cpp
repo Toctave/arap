@@ -157,7 +157,7 @@ bool system_bind(LaplacianSystem& system, const std::vector<FixedVertex>& fixed_
     Eigen::SparseMatrix<double> m = laplacian_matrix(system.cotangent_weights);
     system.laplacian_matrix = m.block(0, 0, system.free_dimension, system.free_dimension);
     system.fixed_constraint_matrix = m.block(0, system.free_dimension,
-				      system.free_dimension, fixed_vertices.size());
+					     system.free_dimension, fixed_vertices.size());
     
     system.rhs.resize(system.free_dimension, 3);
 
@@ -179,8 +179,6 @@ bool system_iterate(LaplacianSystem& system) {
     std::vector<Eigen::Matrix3d> rotations(system.mesh->V.rows());
     for (int i = 0; i < system.mesh->V.rows(); i++) {
 	rotations[i] = compute_best_rotation(system, i);
-	
-	// std::cout << "rotation[" << system.deswizzle[i] << "] = \n" << rotations[i] << "\n";
     }
 
     /* --- Fill system's right hand side --- */
@@ -201,25 +199,9 @@ bool system_iterate(LaplacianSystem& system) {
 		(system.V0.row(v_idx[0]) - system.V0.row(v_idx[1])) *
 		(rotations[it.row()] + rotations[it.col()]).transpose();
 
-	    // std::cout << v_idx[1] << ", " << v_idx[0] << " : " << d << std::endl;
-	    // std::cout << "  wij = " << it.value() << std::endl;
-	    // std::cout << "  vec :\n" << (system.V0.row(v_idx[0]) - system.V0.row(v_idx[1])) << std::endl;
-	    // std::cout << "  rot : \n" << (rotations[it.row()] + rotations[it.col()]).transpose() << std::endl;
-	    // std::cout << "  rot1 : \n" << rotations[it.row()] << std::endl;
-	    // std::cout << "  rot2 : \n" << rotations[it.col()] << std::endl;
-	    // std::cout << "\n\n\n";
-
-
-	    
-	    // std::cout << "p[" << it.col() << "] - p[" << it.row() << "] = "
-	    // << (mesh.V.row(it.col()) - mesh.V.row(it.row())) << "\n";
 	    system.rhs.row(v) += d;
 	}
     }
-
-    // for (int i = 0; i < system.rhs.rows(); i++) {
-    // 	std::cout << "RHS[" << system.deswizzle[i] << "] :\n" << system.rhs.row(i) << std::endl ;
-    // }
 
     int n_fixed = system.mesh->V.rows() - system.free_dimension;
     Eigen::Matrix<double, Eigen::Dynamic, 3>
@@ -244,20 +226,16 @@ bool system_iterate(LaplacianSystem& system) {
 	    - system.rhs).norm() < 1e-3);
 
     for (int i = 0; i < system.free_dimension; i++) {
-	// std::cout << "Editing vertex #" << system.deswizzle[i] << std::endl;
 	system.mesh->V.row(system.deswizzle[i])
 	    = solutions.row(i);
     }
 
-    // std::cout << "Solutions :\n" << solutions << "\n\n";
-
     return true;
 }
 
-void system_solve(LaplacianSystem& system) {
-    // @TODO
-    for (int i = 0; i < 5; i++) {
-	system_iterate(system);
+void system_solve(LaplacianSystem& system, int iterations) {
+    for (int i = 0; i < iterations; i++) {
+	system_iterate(system
+	    );
     }
 }
-
