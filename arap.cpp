@@ -72,7 +72,7 @@ Eigen::SparseMatrix<double> laplacian_matrix(
 }
 
 Eigen::Matrix3d compute_best_rotation(const LaplacianSystem& system, int r) {
-    Eigen::Matrix3d cov;
+    Eigen::Matrix3d cov = Eigen::Matrix3d::Zero();
 
     // std::cout << "Neighbors of " << system.deswizzle[r] << " : ";
     for (Eigen::SparseMatrix<double>::InnerIterator it(system.cotangent_weights, r); it; ++it) {
