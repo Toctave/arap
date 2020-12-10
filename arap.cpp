@@ -107,19 +107,16 @@ Eigen::Matrix3d compute_best_rotation(const LaplacianSystem& system, int r) {
     return rot;
 }
 
-std::vector<Eigen::Index> swizzle_from(int n, const std::vector<Eigen::Index>& fixed_indices) {
-    auto sorted_fixed_indices = fixed_indices;
-    std::sort(sorted_fixed_indices.begin(), sorted_fixed_indices.end());
-    
+std::vector<Eigen::Index> swizzle_from(int n, const std::vector<FixedVertex>& fixed_vertices) {
     std::vector<Eigen::Index> swizzled(n);
     
     size_t free_offset = 0;
-    size_t fixed_offset = n - sorted_fixed_indices.size();
+    size_t fixed_offset = n - fixed_vertices.size();
 
     size_t swizzled_offset = 0;
     
-    for (int i = 0; i < sorted_fixed_indices.size(); i++) {
-	for (; swizzled_offset < sorted_fixed_indices[i]; swizzled_offset++) {
+    for (int i = 0; i < fixed_vertices.size(); i++) {
+	for (; swizzled_offset < fixed_vertices[i].index; swizzled_offset++) {
 	    swizzled[swizzled_offset] = free_offset++;
 	}
 	swizzled[swizzled_offset] = fixed_offset++;
@@ -146,13 +143,13 @@ void system_init(LaplacianSystem& system, Mesh* mesh) {
     system.is_bound = false;
 }
 
-bool system_bind(LaplacianSystem& system, const std::vector<Eigen::Index>& fixed_indices) {
+bool system_bind(LaplacianSystem& system, const std::vector<FixedVertex>& fixed_vertices) {
     system.V0 = system.mesh->V;
     system.is_bound = true;
 
-    system.free_dimension = system.mesh->V.rows() - fixed_indices.size();
+    system.free_dimension = system.mesh->V.rows() - fixed_vertices.size();
     
-    system.swizzle = swizzle_from(system.mesh->V.rows(), fixed_indices);
+    system.swizzle = swizzle_from(system.mesh->V.rows(), fixed_vertices);
     system.deswizzle = reciprocal(system.swizzle);
 	
     system.cotangent_weights = cotangent_weights(*system.mesh, system.swizzle);
@@ -160,7 +157,7 @@ bool system_bind(LaplacianSystem& system, const std::vector<Eigen::Index>& fixed
     Eigen::SparseMatrix<double> m = laplacian_matrix(system.cotangent_weights);
     system.laplacian_matrix = m.block(0, 0, system.free_dimension, system.free_dimension);
     system.fixed_constraint_matrix = m.block(0, system.free_dimension,
-				      system.free_dimension, fixed_indices.size());
+				      system.free_dimension, fixed_vertices.size());
     
     system.rhs.resize(system.free_dimension, 3);
 
@@ -182,7 +179,8 @@ bool system_iterate(LaplacianSystem& system) {
     std::vector<Eigen::Matrix3d> rotations(system.mesh->V.rows());
     for (int i = 0; i < system.mesh->V.rows(); i++) {
 	rotations[i] = compute_best_rotation(system, i);
-	// std::cout << "rotation[" << i << "] = \n" << rotations[i] << "\n";
+	
+	// std::cout << "rotation[" << system.deswizzle[i] << "] = \n" << rotations[i] << "\n";
     }
 
     /* --- Fill system's right hand side --- */
@@ -202,11 +200,26 @@ bool system_iterate(LaplacianSystem& system) {
 	    Eigen::RowVector3d d = .5 * it.value() *
 		(system.V0.row(v_idx[0]) - system.V0.row(v_idx[1])) *
 		(rotations[it.row()] + rotations[it.col()]).transpose();
+
+	    // std::cout << v_idx[1] << ", " << v_idx[0] << " : " << d << std::endl;
+	    // std::cout << "  wij = " << it.value() << std::endl;
+	    // std::cout << "  vec :\n" << (system.V0.row(v_idx[0]) - system.V0.row(v_idx[1])) << std::endl;
+	    // std::cout << "  rot : \n" << (rotations[it.row()] + rotations[it.col()]).transpose() << std::endl;
+	    // std::cout << "  rot1 : \n" << rotations[it.row()] << std::endl;
+	    // std::cout << "  rot2 : \n" << rotations[it.col()] << std::endl;
+	    // std::cout << "\n\n\n";
+
+
+	    
 	    // std::cout << "p[" << it.col() << "] - p[" << it.row() << "] = "
 	    // << (mesh.V.row(it.col()) - mesh.V.row(it.row())) << "\n";
 	    system.rhs.row(v) += d;
 	}
     }
+
+    // for (int i = 0; i < system.rhs.rows(); i++) {
+    // 	std::cout << "RHS[" << system.deswizzle[i] << "] :\n" << system.rhs.row(i) << std::endl ;
+    // }
 
     int n_fixed = system.mesh->V.rows() - system.free_dimension;
     Eigen::Matrix<double, Eigen::Dynamic, 3>

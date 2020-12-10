@@ -7,6 +7,11 @@ struct Mesh {
     Eigen::MatrixXi F;
 };
 
+struct FixedVertex {
+    Eigen::Index index;
+    size_t group;
+};
+
 struct LaplacianSystem {
     Mesh* mesh;
     bool is_bound;
@@ -23,10 +28,10 @@ struct LaplacianSystem {
     Eigen::Matrix<double, Eigen::Dynamic, 3> rhs;
 };
 
-std::vector<Eigen::Index> swizzle_from(int n, const std::vector<Eigen::Index>& fixed_indices);
+std::vector<Eigen::Index> swizzle_from(int n, const std::vector<FixedVertex>& fixed_indices);
 
 void system_init(LaplacianSystem& system, Mesh* mesh);
-bool system_bind(LaplacianSystem& system, const std::vector<Eigen::Index>& fixed_indices);
+bool system_bind(LaplacianSystem& system, const std::vector<FixedVertex>& fixed_vertices);
 void system_solve(LaplacianSystem& system);
 bool system_iterate(LaplacianSystem& system);
 

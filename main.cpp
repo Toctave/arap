@@ -4,6 +4,7 @@
 #include <igl/readOBJ.h>
 #include <igl/opengl/glfw/imgui/ImGuiMenu.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <iostream>
 #include <string>
@@ -22,19 +23,19 @@ bool hasEnding (std::string const &fullString, std::string const &ending) {
     }
 }
 
-Eigen::Index closest_point(Eigen::Vector2f mouse,
-			   const Mesh& mesh, const std::vector<Eigen::Index>& group,
+FixedVertex closest_point(Eigen::Vector2f mouse,
+			   const Mesh& mesh, const std::vector<FixedVertex>& group,
 			   Eigen::Matrix4f view, Eigen::Matrix4f proj,
 			   Eigen::Vector2f point_size) {
     float closest = -1;
-    Eigen::Index chosen = -1;
+    FixedVertex chosen = {-1, 0};
 
     float threshold = point_size.squaredNorm();
 
     Eigen::Vector4f p;
     p(3) = 1;
     for (int i = 0; i < group.size(); i++) {
-	p.block<3, 1>(0, 0) = mesh.V.row(group[i]).cast<float>();
+	p.block<3, 1>(0, 0) = mesh.V.row(group[i].index).cast<float>();
 	Eigen::Vector4f projected = (proj * view * p);
 	projected /= projected(3);
 
@@ -50,9 +51,9 @@ Eigen::Index closest_point(Eigen::Vector2f mouse,
     return chosen;
 }
 
-void update_group(const Eigen::MatrixXd& V, const std::vector<Eigen::Index>& group, Eigen::MatrixXd& group_pos) {
+void update_group(const Eigen::MatrixXd& V, const std::vector<FixedVertex>& group, Eigen::MatrixXd& group_pos) {
     for (int i = 0; i < group.size(); i++) {
-	group_pos.row(i) = V.row(group[i]);
+	group_pos.row(i) = V.row(group[i].index);
     }
 }
 
@@ -86,13 +87,35 @@ Eigen::Vector4f unproject_mouse(const Viewer& viewer, Eigen::Vector3f point) {
     return unprojected_mouse;
 }
 
+bool compare_by_index(const FixedVertex& v1, const FixedVertex& v2) {
+    return v1.index < v2.index;
+}
+
+Eigen::Vector3d group_color(size_t g) {
+    switch(g % 6) {
+    case 0:
+	return Eigen::Vector3d(1, 0, 0);
+    case 1:
+	return Eigen::Vector3d(0, 1, 0);
+    case 2:
+	return Eigen::Vector3d(0, 0, 1);
+    case 3:
+	return Eigen::Vector3d(1, 1, 0);
+    case 4:
+	return Eigen::Vector3d(1, 0, 1);
+    case 5:
+	return Eigen::Vector3d(0, 1, 1);
+    }
+    return Eigen::Vector3d(0, 0, 0);
+}
+
 int main(int argc, char *argv[])
 {
     Eigen::MatrixXd V0;
     Eigen::MatrixXi F0;
 
-    if (argc < 5) {
-	std::cerr << "Usage : ./example <model file> <3 or more fixed indices>\n";
+    if (argc < 2) {
+	std::cerr << "Usage : ./example <model file> <3 or more fixed indices, separated in groups by commas>\n";
 	return 1;
     }
     
@@ -112,31 +135,51 @@ int main(int argc, char *argv[])
     // Plot the mesh
     Viewer viewer;
 
-    Eigen::MatrixXd highlighted_points;
-    Eigen::MatrixXd highlighted_colors;
-
     struct {
-	Eigen::Index selected = -1;
+	FixedVertex selected = {.index = -1};
 	bool down = false;
 	Eigen::Vector4f last_pos;
     } mouse;
 
     LaplacianSystem system;
-    std::vector<Eigen::Index> fixed(argc - 2);
+    std::vector<FixedVertex> fixed_vertices;
 
+    size_t curgrp = 0;
+    for (int i = 2; i < argc; i++) {
+	if (argv[i][0] == ',') {
+	    curgrp++;
+	} else {
+	    fixed_vertices.push_back({atoi(argv[i]), curgrp});
+	}
+    }
+
+    std::sort(fixed_vertices.begin(), fixed_vertices.end(), compare_by_index);
+
+    Eigen::MatrixXd highlighted_points(fixed_vertices.size(), 3);
+    Eigen::MatrixXd highlighted_colors(fixed_vertices.size(), 3);
+
+    for (size_t i = 0; i < fixed_vertices.size(); i++) {
+	highlighted_colors.row(i) = group_color(fixed_vertices[i].group);
+	highlighted_points.row(i) = mesh.V.row(fixed_vertices[i].index);
+    }
+    
     system_init(system, &mesh);
 
     viewer.callback_mouse_move = 
-	[&fixed, &system, &highlighted_colors, &highlighted_points, &mouse](igl::opengl::glfw::Viewer& viewer, int, int)->bool
+	[&fixed_vertices, &system, &highlighted_colors, &highlighted_points, &mouse](igl::opengl::glfw::Viewer& viewer, int, int)->bool
 	    {
-		if (mouse.down && mouse.selected >= 0) {
-		    Eigen::Vector4f unprojected_mouse = unproject_mouse(viewer, system.mesh->V.row(mouse.selected).cast<float>());
+		if (mouse.down && mouse.selected.index >= 0) {
+		    Eigen::Vector4f unprojected_mouse = unproject_mouse(viewer, system.mesh->V.row(mouse.selected.index).cast<float>());
 		    Eigen::Vector4f mouse_delta = unprojected_mouse - mouse.last_pos;
 		    mouse.last_pos = unprojected_mouse;
 
-		    system.mesh->V.row(mouse.selected) += mouse_delta.block<3, 1>(0, 0).cast<double>();
+		    for (const auto& vertex : fixed_vertices) {
+			if (vertex.group == mouse.selected.group) {
+			    system.mesh->V.row(vertex.index) += mouse_delta.block<3, 1>(0, 0).cast<double>();
+			}
+		    }
 
-		    update_group(system.mesh->V, fixed, highlighted_points);
+		    update_group(system.mesh->V, fixed_vertices, highlighted_points);
 		    viewer.data().set_points(highlighted_points, highlighted_colors);
 
 		    return true;
@@ -146,22 +189,22 @@ int main(int argc, char *argv[])
 	    };
 
     viewer.callback_mouse_down = 
-	[&mouse, &system, &fixed](igl::opengl::glfw::Viewer& viewer, int, int)->bool
+	[&mouse, &system, &fixed_vertices](igl::opengl::glfw::Viewer& viewer, int, int)->bool
 	    {
 		Eigen::Vector2f dimensions = viewer.core().viewport.block<2, 1>(2, 0);
 		Eigen::Vector2f point_size = viewer.data().point_size / dimensions.array();
 		
 		mouse.down = true;
 
-		Eigen::Index closest = closest_point(mouse_position(viewer),
-						     *system.mesh, fixed,
+		FixedVertex closest = closest_point(mouse_position(viewer),
+						     *system.mesh, fixed_vertices,
 						     viewer.core().view,
 						     viewer.core().proj,
 						     point_size);
 		mouse.selected = closest;
 
-		if (closest >= 0) {
-		    mouse.last_pos = unproject_mouse(viewer, system.mesh->V.row(mouse.selected).cast<float>());
+		if (closest.index >= 0) {
+		    mouse.last_pos = unproject_mouse(viewer, system.mesh->V.row(mouse.selected.index).cast<float>());
 		}
 		
 		return false;
@@ -183,16 +226,37 @@ int main(int argc, char *argv[])
 		return false;
 	    };
 
-    highlighted_points.resize(argc - 2, 3);
-    highlighted_colors.resize(argc - 2, 3);
-    
-    for (int i = 0; i < argc - 2; i++) {
-	fixed[i] = atoi(argv[i + 2]);
-	highlighted_colors.row(i) << 1, 0, 0;
-	highlighted_points.row(i) = mesh.V.row(fixed[i]);
-    }
 
-    if (!system_bind(system, fixed)) {
+    viewer.callback_key_down = 
+	[&mesh, &mouse, &system](igl::opengl::glfw::Viewer& viewer, unsigned char key, int modifier)->bool
+	    {
+		if (key == 'U') { //marche aussi avecCtrl
+		    mesh.V(0,0) += 1;
+		    mouse.selected.index = 0;
+		    viewer.data().set_mesh(mesh.V, mesh.F);
+		    return true;
+		}
+
+		if (key == 'S') {
+		    std::cout << std::endl << "Points: " << std::endl << mesh.V << std::endl;
+
+		    system_iterate(system);
+		    viewer.data().set_mesh(mesh.V, mesh.F);
+
+		    std::cout << std::endl << "Points: " << std::endl << mesh.V << std::endl;
+		    return true;
+		}
+		return false;
+	    };
+    
+
+    // for (int i = 0; i < argc - 2; i++) {
+	// fixed[i] = atoi(argv[i + 2]);
+	// highlighted_colors.row(i) << 1, 0, 0;
+	// highlighted_points.row(i) = mesh.V.row(fixed[i]);
+    // }
+
+    if (!system_bind(system, fixed_vertices)) {
     	std::cerr << "Failed to bind mesh\n" << std::endl;
     	return 1;
     }
