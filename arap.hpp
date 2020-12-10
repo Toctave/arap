@@ -1,6 +1,6 @@
 #pragma once
 #include <Eigen/SparseCore>
-#include <Eigen/SparseLU>
+#include <Eigen/SparseCholesky>
 
 struct Mesh {
     Eigen::MatrixXd V;
@@ -19,7 +19,7 @@ struct LaplacianSystem {
     Eigen::SparseMatrix<double> fixed_constraint_matrix;
     Eigen::SparseMatrix<double> cotangent_weights;
 
-    Eigen::SparseLU<Eigen::SparseMatrix<double>> solver;
+    Eigen::SimplicialLDLT<Eigen::SparseMatrix<double>> solver;
     Eigen::Matrix<double, Eigen::Dynamic, 3> rhs;
 };
 
