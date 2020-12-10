@@ -249,12 +249,7 @@ int main(int argc, char *argv[])
 		return false;
 	    };
     
-
-    // for (int i = 0; i < argc - 2; i++) {
-	// fixed[i] = atoi(argv[i + 2]);
-	// highlighted_colors.row(i) << 1, 0, 0;
-	// highlighted_points.row(i) = mesh.V.row(fixed[i]);
-    // }
+    viewer.core().is_animating = true;
 
     if (!system_bind(system, fixed_vertices)) {
     	std::cerr << "Failed to bind mesh\n" << std::endl;
