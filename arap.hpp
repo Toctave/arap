@@ -1,6 +1,7 @@
 #pragma once
 #include <Eigen/SparseCore>
 #include <Eigen/SparseCholesky>
+#include <Eigen/SparseLU>
 
 struct Mesh {
     Eigen::MatrixXd V;
@@ -32,7 +33,7 @@ std::vector<Eigen::Index> swizzle_from(int n, const std::vector<FixedVertex>& fi
 
 void system_init(LaplacianSystem& system, Mesh* mesh);
 bool system_bind(LaplacianSystem& system, const std::vector<FixedVertex>& fixed_vertices);
-void system_solve(LaplacianSystem& system);
+void system_solve(LaplacianSystem& system, int iterations);
 bool system_iterate(LaplacianSystem& system);
 
 

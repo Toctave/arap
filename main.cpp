@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <iostream>
 #include <string>
+#include <chrono>
 
 #include <cstdlib>
 
@@ -109,28 +110,62 @@ Eigen::Vector3d group_color(size_t g) {
     return Eigen::Vector3d(0, 0, 0);
 }
 
+bool load_model(const std::string& model_name, Mesh& mesh) {
+    if (hasEnding(model_name, ".off")) {
+	igl::readOFF(model_name, mesh.V, mesh.F);
+	return true;
+    } else if (hasEnding(model_name, ".obj")) {
+	igl::readOBJ(model_name, mesh.V, mesh.F);
+	return true;
+    } else {
+	return false;
+    }
+}
+
+void benchmark(const std::string& model_name, int iterations) {
+    using namespace std::chrono;
+    Mesh mesh;
+    LaplacianSystem system;
+
+    std::vector<FixedVertex> fixed_vertices = {
+	{0, 0},
+	{1, 0},
+	{2, 0},
+	{3, 0},
+    };
+    
+    if (!load_model(model_name, mesh)) {
+	return;
+    }
+
+    system_init(system, &mesh);
+    if (!system_bind(system, fixed_vertices)) {
+	return;
+    }
+    
+    auto t0 = high_resolution_clock::now();
+
+    system_solve(system, iterations);
+
+    auto t1 = high_resolution_clock::now();
+
+    duration<double> elapsed(t1 - t0);
+
+    std::cout << model_name << ", " << mesh.V.rows() << ", " << elapsed.count() / iterations << std::endl;
+}
+
 int main(int argc, char *argv[])
 {
-    Eigen::MatrixXd V0;
-    Eigen::MatrixXi F0;
-
     if (argc < 2) {
 	std::cerr << "Usage : ./example <model file> <3 or more fixed indices, separated in groups by commas>\n";
 	return 1;
     }
-    
-    std::string filename(argv[1]);
-    if (hasEnding(filename, ".off")) {
-	igl::readOFF(argv[1], V0, F0);
-    } else if (hasEnding(filename, ".obj")) {
-	igl::readOBJ(argv[1], V0, F0);
-    } else {
-	std::cerr << "Cannot recognize file " << filename << std::endl;
+
+    Mesh mesh;
+    if (!load_model(argv[1], mesh)) {
+	std::cerr << "Could not load model." << std::endl;
 	return 1;
     }
-
-    Mesh mesh{V0, F0};
-    // auto weights = cotangent_weights(mesh);
 
     // Plot the mesh
     Viewer viewer;
@@ -238,17 +273,15 @@ int main(int argc, char *argv[])
 		}
 
 		if (key == 'S') {
-		    std::cout << std::endl << "Points: " << std::endl << mesh.V << std::endl;
-
 		    system_iterate(system);
 		    viewer.data().set_mesh(mesh.V, mesh.F);
-
-		    std::cout << std::endl << "Points: " << std::endl << mesh.V << std::endl;
+		    
 		    return true;
 		}
 		return false;
 	    };
-    
+
+    viewer.data().show_lines = false;
     viewer.core().is_animating = true;
 
     if (!system_bind(system, fixed_vertices)) {
@@ -256,12 +289,9 @@ int main(int argc, char *argv[])
     	return 1;
     }
 
-    system_solve(system);
-
     std::cout << viewer.data().point_size << std::endl;
     viewer.data().set_points(highlighted_points, highlighted_colors);
 
     viewer.data().set_mesh(mesh.V, mesh.F);
-    viewer.data().set_face_based(true);
     viewer.launch();
 }
