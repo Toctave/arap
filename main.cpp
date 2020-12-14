@@ -223,29 +223,6 @@ int main(int argc, char *argv[])
 		return false;
 	    };
 
-
-    viewer.callback_key_down = 
-	[&mesh, &mouse, &system](igl::opengl::glfw::Viewer& viewer, unsigned char key, int modifier)->bool
-	    {
-		if (key == 'U') { //marche aussi avecCtrl
-		    mesh.V(0,0) += 1;
-		    mouse.selected.index = 0;
-		    viewer.data().set_mesh(mesh.V, mesh.F);
-		    return true;
-		}
-
-		if (key == 'S') {
-		    std::cout << std::endl << "Points: " << std::endl << mesh.V << std::endl;
-
-		    system_iterate(system);
-		    viewer.data().set_mesh(mesh.V, mesh.F);
-
-		    std::cout << std::endl << "Points: " << std::endl << mesh.V << std::endl;
-		    return true;
-		}
-		return false;
-	    };
-    
     viewer.core().is_animating = true;
 
     if (!system_bind(system, fixed_vertices)) {

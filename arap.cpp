@@ -74,22 +74,17 @@ Eigen::SparseMatrix<double> laplacian_matrix(
 Eigen::Matrix3d compute_best_rotation(const LaplacianSystem& system, int r) {
     Eigen::Matrix3d cov = Eigen::Matrix3d::Zero();
 
-    // std::cout << "Neighbors of " << system.deswizzle[r] << " : ";
     for (Eigen::SparseMatrix<double>::InnerIterator it(system.cotangent_weights, r); it; ++it) {
 	Eigen::Index v_idx[2] = {
 	    system.deswizzle[it.col()],
 	    system.deswizzle[it.row()]
 	};
 
-	// std::cout << "(" << v_idx[1] << ", " << it.value() << ") ";
-	
 	Eigen::Vector3d e = system.mesh->V.row(v_idx[0]) - system.mesh->V.row(v_idx[1]);
-	// @opti : e0 could be precomputed
 	Eigen::Vector3d e0 = system.V0.row(v_idx[0]) - system.V0.row(v_idx[1]);
 
 	cov += it.value() * e0 * e.transpose();
     }
-    // std::cout << std::endl;
     
     Eigen::JacobiSVD<Eigen::Matrix3d> svd(cov, Eigen::ComputeFullU | Eigen::ComputeFullV);
 
@@ -235,7 +230,6 @@ bool system_iterate(LaplacianSystem& system) {
 
 void system_solve(LaplacianSystem& system, int iterations) {
     for (int i = 0; i < iterations; i++) {
-	system_iterate(system
-	    );
+	system_iterate(system);
     }
 }
