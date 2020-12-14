@@ -7,14 +7,10 @@
 Eigen::SparseMatrix<double> cotangent_weights(const Mesh& mesh, const std::vector<Eigen::Index>& swizzle) {
     Eigen::SparseMatrix<double> weights(mesh.V.rows(), mesh.V.rows());
     std::vector<Eigen::Triplet<double>> triplets;
-    triplets.reserve(6 * mesh.F.rows());
+    triplets.reserve(18 * mesh.F.rows());
 
     for (int fid = 0; fid < mesh.F.rows(); fid++) {
-	Eigen::Vector3i v(
-	    mesh.F(fid, 0),
-	    mesh.F(fid, 1),
-	    mesh.F(fid, 2)
-	    );
+	Eigen::Vector3i v = mesh.F.row(fid);
 
 	Eigen::Matrix<double, 3, 3> edges;
 	for (int j = 0; j < 3; j++) {
