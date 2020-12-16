@@ -216,10 +216,12 @@ bool system_iterate(LaplacianSystem& system) {
     assert((system.laplacian_matrix * solutions
 	    - system.rhs).norm() < 1e-3);
 
+    system.mesh_access.lock();
     for (int i = 0; i < system.free_dimension; i++) {
 	system.mesh->V.row(system.deswizzle[i])
 	    = solutions.row(i);
     }
+    system.mesh_access.unlock();
 
     return true;
 }

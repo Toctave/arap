@@ -10,7 +10,7 @@
 #include <string>
 #include <chrono>
 
-#include <cstdlib>
+#include <thread>
 
 #include "arap.hpp"
 
@@ -154,6 +154,12 @@ void benchmark(const std::string& model_name, int iterations) {
     std::cout << model_name << ", " << mesh.V.rows() << ", " << elapsed.count() / iterations << std::endl;
 }
 
+void solve_loop(LaplacianSystem* system) {
+    while (true) {
+	system_iterate(*system);
+    }
+}
+
 int main(int argc, char *argv[])
 {
     if (argc < 2) {
@@ -255,8 +261,10 @@ int main(int argc, char *argv[])
     viewer.callback_pre_draw =
 	[&system, &mesh](Viewer& viewer) -> bool
 	    {
-		system_solve(system, 1);
-		viewer.data().set_vertices(mesh.V);
+		if (system.mesh_access.try_lock()) {
+		    viewer.data().set_vertices(mesh.V);
+		    system.mesh_access.unlock();
+		}
 		return false;
 	    };
 
@@ -269,7 +277,9 @@ int main(int argc, char *argv[])
 
     std::cout << viewer.data().point_size << std::endl;
     viewer.data().set_points(highlighted_points, highlighted_colors);
-
     viewer.data().set_mesh(mesh.V, mesh.F);
+
+    std::thread solver_thread(solve_loop, &system);
+    
     viewer.launch();
 }

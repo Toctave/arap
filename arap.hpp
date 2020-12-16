@@ -3,6 +3,8 @@
 #include <Eigen/SparseCholesky>
 #include <Eigen/SparseLU>
 
+#include <mutex>
+
 struct Mesh {
     Eigen::MatrixXd V;
     Eigen::MatrixXi F;
@@ -27,6 +29,8 @@ struct LaplacianSystem {
 
     Eigen::SimplicialLDLT<Eigen::SparseMatrix<double>> solver;
     Eigen::Matrix<double, Eigen::Dynamic, 3> rhs;
+
+    std::mutex mesh_access;
 };
 
 std::vector<Eigen::Index> swizzle_from(int n, const std::vector<FixedVertex>& fixed_indices);
