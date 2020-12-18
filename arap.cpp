@@ -4,6 +4,19 @@
 #include <iostream>
 #include <algorithm> // std::sort
 
+#define CLAMP_WIJ_TO_ZERO
+
+static double compute_area(const Mesh& mesh) {
+    double area = 0.0;
+    for (int fid = 0; fid < mesh.F.rows(); fid++) {
+	Eigen::Vector3d e1 = mesh.V.row(mesh.F(fid, 1)) - mesh.V.row(mesh.F(fid, 0));
+	Eigen::Vector3d e2 = mesh.V.row(mesh.F(fid, 2)) - mesh.V.row(mesh.F(fid, 0));
+
+	area += e1.cross(e2).norm();
+    }
+    return area / 2.;
+}
+
 Eigen::SparseMatrix<double> cotangent_weights(const Mesh& mesh, const std::vector<Eigen::Index>& swizzle) {
     Eigen::SparseMatrix<double> weights(mesh.V.rows(), mesh.V.rows());
     std::vector<Eigen::Triplet<double>> triplets;
@@ -48,6 +61,18 @@ Eigen::SparseMatrix<double> cotangent_weights(const Mesh& mesh, const std::vecto
 
     weights.setFromTriplets(triplets.begin(), triplets.end());
 
+#ifdef CLAMP_WIJ_TO_ZERO
+    for (int k=0; k < weights.outerSize(); ++k) {
+	double colsum = 0;
+	for (Eigen::SparseMatrix<double>::InnerIterator it(weights,k); it; ++it) {
+	    if (it.value() < 0.0) {
+		weights.coeffRef(it.row(), it.col()) = 0.0;
+		// std::cout << "[WARNING] Ignoring edge " << it.row() << " - " << it.col() << "\n";
+	    }
+	}
+    }
+#endif
+
     return weights;
 }
 
@@ -79,9 +104,10 @@ Eigen::Matrix3d compute_best_rotation(const LaplacianSystem& system, int r) {
 	Eigen::Vector3d e = system.mesh->V.row(v_idx[0]) - system.mesh->V.row(v_idx[1]);
 	Eigen::Vector3d e0 = system.V0.row(v_idx[0]) - system.V0.row(v_idx[1]);
 
-	cov += it.value() * e0 * e.transpose();
+	cov += it.value() * (e0 * e.transpose() +
+			     system.rotation_variation_penalty * system.optimal_rotations[it.row()].transpose());
     }
-    
+
     Eigen::JacobiSVD<Eigen::Matrix3d> svd(cov, Eigen::ComputeFullU | Eigen::ComputeFullV);
 
     Eigen::Matrix3d um = svd.matrixU();
@@ -98,7 +124,7 @@ Eigen::Matrix3d compute_best_rotation(const LaplacianSystem& system, int r) {
     return rot;
 }
 
-std::vector<Eigen::Index> swizzle_from(int n, const std::vector<FixedVertex>& fixed_vertices) {
+std::vector<Eigen::Index> swizzle_from(size_t n, const std::vector<FixedVertex>& fixed_vertices) {
     std::vector<Eigen::Index> swizzled(n);
     
     size_t free_offset = 0;
@@ -129,9 +155,17 @@ std::vector<Eigen::Index> reciprocal(const std::vector<Eigen::Index>& v) {
     return r;
 }
 
-void system_init(LaplacianSystem& system, Mesh* mesh) {
+void system_init(LaplacianSystem& system, Mesh* mesh, double alpha) {
     system.mesh = mesh;
     system.is_bound = false;
+    system.iterations = 0;
+
+    system.rotation_variation_penalty = alpha * compute_area(*mesh);
+
+    system.optimal_rotations.reserve(mesh->V.rows());
+    for (size_t i = 0; i < mesh->V.rows(); i++) {
+	system.optimal_rotations.push_back(Eigen::Matrix3d::Identity());
+    }
 }
 
 bool system_bind(LaplacianSystem& system, const std::vector<FixedVertex>& fixed_vertices) {
@@ -166,10 +200,9 @@ bool system_bind(LaplacianSystem& system, const std::vector<FixedVertex>& fixed_
 
 bool system_iterate(LaplacianSystem& system) {
     /* --- Compute approximate rotations --- */
-    
-    std::vector<Eigen::Matrix3d> rotations(system.mesh->V.rows());
+
     for (int i = 0; i < system.mesh->V.rows(); i++) {
-	rotations[i] = compute_best_rotation(system, i);
+	system.optimal_rotations[i] = compute_best_rotation(system, i);
     }
 
     /* --- Fill system's right hand side --- */
@@ -188,7 +221,7 @@ bool system_iterate(LaplacianSystem& system) {
 	    
 	    Eigen::RowVector3d d = .5 * it.value() *
 		(system.V0.row(v_idx[0]) - system.V0.row(v_idx[1])) *
-		(rotations[it.row()] + rotations[it.col()]).transpose();
+		(system.optimal_rotations[it.row()] + system.optimal_rotations[it.col()]).transpose();
 
 	    system.rhs.row(v) += d;
 	}
@@ -222,6 +255,8 @@ bool system_iterate(LaplacianSystem& system) {
 	    = solutions.row(i);
     }
     system.mesh_access.unlock();
+
+    system.iterations++;
 
     return true;
 }

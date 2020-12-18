@@ -3,6 +3,7 @@
 #include <igl/readOFF.h>
 #include <igl/readOBJ.h>
 #include <igl/opengl/glfw/imgui/ImGuiMenu.h>
+#include <igl/per_vertex_normals.h>
 
 #include <algorithm>
 #include <cstdio>
@@ -93,33 +94,47 @@ bool compare_by_index(const FixedVertex& v1, const FixedVertex& v2) {
 }
 
 Eigen::Vector3d group_color(size_t g) {
+    Eigen::Vector3d color;
     switch(g % 6) {
     case 0:
-	return Eigen::Vector3d(1, 0, 0);
+	color = Eigen::Vector3d(26, 153, 136);
+	break;
     case 1:
-	return Eigen::Vector3d(0, 1, 0);
+	color = Eigen::Vector3d(235,86,0);
+	break;
     case 2:
-	return Eigen::Vector3d(0, 0, 1);
+	color = Eigen::Vector3d(183, 36, 92);
+	break;
     case 3:
-	return Eigen::Vector3d(1, 1, 0);
+	color = Eigen::Vector3d(243,183,0);
+	break;
     case 4:
-	return Eigen::Vector3d(1, 0, 1);
+	color = Eigen::Vector3d(55,50,62);
+	break;
     case 5:
-	return Eigen::Vector3d(0, 1, 1);
+	color = Eigen::Vector3d(52,89,149);
+	break;
     }
-    return Eigen::Vector3d(0, 0, 0);
+
+    Eigen::Vector3d white(255, 255, 255);
+    for (int i = 0; i < g / 6; i++) {
+	color = white - (white - color) * .75;
+    }
+    return color / 255;
 }
 
 bool load_model(const std::string& model_name, Mesh& mesh) {
     if (hasEnding(model_name, ".off")) {
 	igl::readOFF(model_name, mesh.V, mesh.F);
-	return true;
     } else if (hasEnding(model_name, ".obj")) {
 	igl::readOBJ(model_name, mesh.V, mesh.F);
-	return true;
     } else {
 	return false;
     }
+
+    igl::per_vertex_normals(mesh.V, mesh.F, mesh.N);
+
+    return true;
 }
 
 void benchmark(const std::string& model_name, int iterations) {
@@ -138,7 +153,7 @@ void benchmark(const std::string& model_name, int iterations) {
 	return;
     }
 
-    system_init(system, &mesh);
+    system_init(system, &mesh, 0.);
     if (!system_bind(system, fixed_vertices)) {
 	return;
     }
@@ -203,7 +218,7 @@ int main(int argc, char *argv[])
 	highlighted_points.row(i) = mesh.V.row(fixed_vertices[i].index);
     }
     
-    system_init(system, &mesh);
+    system_init(system, &mesh, 0.002);
 
     viewer.callback_mouse_move = 
 	[&fixed_vertices, &system, &highlighted_colors, &highlighted_points, &mouse](igl::opengl::glfw::Viewer& viewer, int, int)->bool
@@ -258,26 +273,48 @@ int main(int argc, char *argv[])
 		return false;
 	    };
 
+    using namespace std::chrono;
+    auto t0 = high_resolution_clock::now();
+    Eigen::MatrixXd colors(mesh.V.rows(), 3);
+    for (int i = 0; i < colors.rows(); i++) {
+	colors.row(i) = Eigen::Vector3d(170,170,170) / 255.;
+    }
+
     viewer.callback_pre_draw =
-	[&system, &mesh](Viewer& viewer) -> bool
+	[&system, &mesh, &t0, &colors](Viewer& viewer) -> bool
 	    {
+		auto t1 = high_resolution_clock::now();
+		duration<double> elapsed(t1 - t0);
+
+		double iterations_per_second = system.iterations / elapsed.count();
+
+		std::cout << iterations_per_second << " iterations per second\n";
+		
 		if (system.mesh_access.try_lock()) {
 		    viewer.data().set_vertices(mesh.V);
+
+		    igl::per_vertex_normals(mesh.V, mesh.F, mesh.N);
+		    viewer.data().set_normals(mesh.N);
+		    
 		    system.mesh_access.unlock();
 		}
+		
 		return false;
 	    };
 
     viewer.core().is_animating = true;
-
+    viewer.core().background_color = Eigen::Vector4f(233,237,238, 255) / 255.0f;
+    
+    std::cout << argv[1] << " : " << mesh.V.rows() << " vertices.\n";
     if (!system_bind(system, fixed_vertices)) {
     	std::cerr << "Failed to bind mesh\n" << std::endl;
     	return 1;
     }
 
-    std::cout << viewer.data().point_size << std::endl;
     viewer.data().set_points(highlighted_points, highlighted_colors);
     viewer.data().set_mesh(mesh.V, mesh.F);
+    viewer.data().set_colors(colors);
+    viewer.data().set_face_based(false);
 
     std::thread solver_thread(solve_loop, &system);
     

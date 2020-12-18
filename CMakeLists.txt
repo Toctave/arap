@@ -14,3 +14,5 @@ find_package(LIBIGL REQUIRED QUIET)
 file(GLOB SRCFILES *.cpp)
 add_executable(${PROJECT_NAME} ${SRCFILES})
 target_link_libraries(${PROJECT_NAME} igl::core igl::opengl_glfw)
+
+add_compile_definitions(EIGEN_INITIALIZE_MATRICES_BY_NAN)

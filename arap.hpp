@@ -8,6 +8,7 @@
 struct Mesh {
     Eigen::MatrixXd V;
     Eigen::MatrixXi F;
+    Eigen::MatrixXd N;
 };
 
 struct FixedVertex {
@@ -23,6 +24,9 @@ struct LaplacianSystem {
     std::vector<Eigen::Index> deswizzle;
     
     Eigen::MatrixXd V0;
+
+    std::vector<Eigen::Matrix3d> optimal_rotations;
+    double rotation_variation_penalty;
     Eigen::SparseMatrix<double> laplacian_matrix;
     Eigen::SparseMatrix<double> fixed_constraint_matrix;
     Eigen::SparseMatrix<double> cotangent_weights;
@@ -31,11 +35,11 @@ struct LaplacianSystem {
     Eigen::Matrix<double, Eigen::Dynamic, 3> rhs;
 
     std::mutex mesh_access;
+
+    int iterations;
 };
 
-std::vector<Eigen::Index> swizzle_from(int n, const std::vector<FixedVertex>& fixed_indices);
-
-void system_init(LaplacianSystem& system, Mesh* mesh);
+void system_init(LaplacianSystem& system, Mesh* mesh, double alpha);
 bool system_bind(LaplacianSystem& system, const std::vector<FixedVertex>& fixed_vertices);
 void system_solve(LaplacianSystem& system, int iterations);
 bool system_iterate(LaplacianSystem& system);
