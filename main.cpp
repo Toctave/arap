@@ -218,7 +218,7 @@ int main(int argc, char *argv[])
 	highlighted_points.row(i) = mesh.V.row(fixed_vertices[i].index);
     }
     
-    system_init(system, &mesh, 0.002);
+    system_init(system, &mesh, 0.005);
 
     viewer.callback_mouse_move = 
 	[&fixed_vertices, &system, &highlighted_colors, &highlighted_points, &mouse](igl::opengl::glfw::Viewer& viewer, int, int)->bool
